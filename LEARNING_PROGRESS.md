@@ -1,6 +1,6 @@
 # inventory-practice 学习进度
 
-更新时间：2026-07-23（JWT 授权、Redis 缓存、Git/GitHub 与首轮算法练习已完成）
+更新时间：2026-07-24（Docker 基础阶段完成，已回到 Spring Boot 主线并完成库存总价值功能）
 
 ## 当前技术栈
 
@@ -130,6 +130,39 @@
 - 已开始准备后端实习：确认简历基础信息与项目描述，当前策略是边学习边投递，优先积累线上面试经验。
 - 已开始 Java 算法练习：完成 HashSet 判断数组重复元素，理解集合去重、`add()` 返回值、增强 for 循环和平均 `O(n)` 复杂度。
 - 已完成两数之和暴力解法并在 `main` 中运行成功，理解双重循环、数组下标、`new int[]{i, j}`、`O(n²)` 时间复杂度和 `O(1)` 额外空间。
+- 已在模板帮助下完成两数之和 HashMap 解法并运行成功；知道它使用“数字 → 下标”查找补数，但目前仍不能独立写出和完整解释代码。
+- 已为登录补充密码错误测试，验证返回 401 且不生成 JWT；Mockito、`assertThrows` 和 `verify(..., never())` 目前属于会读、会改模板，不要求独立手写。
+- 已引入 Actuator 并公开 `/actuator/health`，能够通过 `{"status":"UP"}` 判断 Spring Boot 应用已启动；相关配置属于可复制模板。
+- 已在 Git Bash 中接触 `pwd`、`ls -la`、`cd`、`find` 和 `cat`，能在提示下完成目录导航和文件查看，尚未形成独立使用习惯。
+- 已理解 `mvn test` 用于测试、`mvn package` 用于生成 JAR、`java -jar` 用于运行 JAR，并在提示下从终端完成测试、打包和启动。
+- 已理解环境变量用于把数据库密码、JWT 密钥和端口放在源码之外，并验证同一 JAR 可通过 `SERVER_PORT` 运行在不同端口；变量配置命令仍需查模板。
+- 已新增 `sql/schema.sql`，包含 `product`、`stock_operation` 和 `sys_user` 三张表，并通过 MySQL 容器验证三张表能够自动创建。
+- 已补充 README 的环境要求、本地构建、JAR 运行、健康检查、数据库初始化和 Docker Compose 说明。
+- 已在指导下创建 Dockerfile、`.dockerignore`、`.env.example` 和 `compose.yaml`，完成 Spring Boot、MySQL、Redis 三容器启动。
+- 已实际验证容器环境中的健康检查、用户注册、商品新增和 Redis 缓存：连续查询两次商品时 MySQL 只执行一次商品查询 SQL。
+- 已完成 Docker 配置的 Git 提交和推送，但 Dockerfile、Compose、镜像、容器、数据卷和容器网络目前只是首次接触，不能视为独立掌握。
+- 已通过实际命令区分镜像与容器：镜像是创建容器的模板，容器是镜像运行后的实例；执行 `docker compose down` 后容器消失但镜像仍存在。
+- 已练习 `docker run`、`docker ps`、`docker ps -a`、`docker stop`、`docker start` 和 `docker rm`，知道停止容器不会删除容器，删除容器不会自动删除镜像。
+- 已理解 `--filter` 只筛选显示结果，不会改变容器状态；目前命令参数仍需参考示例。
+- 已练习端口映射 `-p 6381:6379`，知道格式是“宿主机端口:容器端口”，同一个宿主机端口不能被两个运行中的容器同时占用。
+- 已使用 `docker exec` 在 Redis 容器中执行 `redis-cli ping`、`set`、`get` 和 `save`；理解 `PONG` 表示 Redis 已启动并能处理命令。
+- 已验证同一容器 `stop/start` 后数据仍在；删除无 Volume 的容器并重建后数据消失。
+- 已创建命名 Volume `docker-learning-redis-data` 并挂载到 `/data`，通过 `docker inspect`、`dump.rdb`、删除容器后重建和再次读取，验证 Volume 可独立保存数据。
+- 已阅读 Redis 容器日志，能在提示下识别版本、内部端口、RDB 加载、加载键数量和 `Ready to accept connections`。
+- 已重新理解 Compose：`docker compose up -d` 读取 `compose.yaml`，在后台创建网络并启动 `app`、`mysql`、`redis`；`docker compose down` 删除容器和网络但默认保留 Volume。
+- 已验证 Compose 重建 MySQL 容器后 `docker_user` 仍能登录，证明 `mysql_data` Volume 保留了数据库数据。
+- 已检查 `inventory-practice_default` 网络，确认 `inventory-app`、`inventory-mysql`、`inventory-redis` 位于同一 bridge 网络中。
+- 已通过 `printenv` 验证 Compose 把 `DB_URL`、`REDIS_HOST`、`REDIS_PORT` 和 `SERVER_PORT` 传入应用容器。
+- 已纠正关键误解：容器中的 `localhost` 指当前容器自己；应用访问其他 Compose 服务应使用 `mysql`、`redis` 等服务名。
+- 已完成 Dockerfile 的 `FROM`、`WORKDIR`、`COPY`、`EXPOSE`、`ENTRYPOINT` 理解检查，能够说明本机 JAR 被复制为镜像中的 `/app/app.jar`，源码修改后需要重新打包和构建镜像。
+- 已结合真实 `compose.yaml` 理解 `services`、`image/build`、`ports`、`environment`、`volumes`、`healthcheck` 和 `depends_on`；知道 Navicat 通过 `localhost:3307` 访问容器 MySQL，而 app 容器通过 `mysql:3306` 访问。
+- 已结合真实 `application.properties` 理解 `${变量名:默认值}`、数据库与 Redis 地址切换、JWT 必填密钥、MyBatis 下划线转驼峰、SQL 日志、Redis 超时和缓存 TTL。
+- 已能使用 `docker compose ps` 判断三个服务状态，使用 `docker compose logs app --tail 30` 从日志确认 Java 17、`/app/app.jar`、Tomcat 8080 和 Spring Boot 启动成功。
+- 已完成“统计上架商品库存总价值”功能：先亲自使用 `BigDecimal` 和 for 循环实现 `价格 × 库存` 求和，再优化为 Mapper 中的 `SUM(price * stock)` 聚合 SQL。
+- 已理解 `COALESCE(SUM(...), 0)` 用于在没有符合条件的商品时返回 0，自定义 SQL 中显式添加 `status = 1` 和 `is_deleted = 0`。
+- 已通过接口与 Navicat SQL 交叉验证总价值均为 `1644063.70`；随后补充 Mockito 测试，并能区分“测试 Java 计算逻辑”和“模拟 Mapper 返回值”的不同意义。
+- 已从 IDEA 运行整个 `ProductServiceTest`，3 个测试通过；运行 `mvn package` 时进一步发现并修复完整 Spring 上下文测试的 JWT 测试配置问题，最终全部 6 个测试通过。
+- 已在 Windows 用户环境变量中永久配置 `JAVA_HOME`、`MAVEN_HOME` 和 `Path`，新 PowerShell 中执行 `mvn -v` 能识别 Maven 3.9.11 和 Java 17。
 
 ## 当前正在学习
 
@@ -144,14 +177,13 @@
 
 当前下一步（按优先级从高到低）：
 
-1. 使用 `HashMap<Integer, Integer>` 优化两数之和，理解“数值 → 下标”和 `need = target - nums[i]`，把时间复杂度从 `O(n²)` 降到平均 `O(n)`。
-2. 继续补 Java 实习高频基础：数组、String、List、Set、Map、异常和常见集合操作，并保持少量算法练习。
-3. 检查并补充注册、登录的少量核心单元测试，不堆重复边界测试。
-4. 学习 Linux 常用命令和项目启动、部署基础，完善 README 中的运行步骤。
-5. 根据真实后端实习 JD 调整简历关键词和项目讲解，边学习边投递，积累线上面试经验。
-6. Docker、消息队列等内容放到后续扩展阶段，暂不急于学习微服务源码和复杂分布式架构。
+1. 执行 `docker compose up -d --build`，把新的聚合 SQL 版本更新到 app 容器，再次验证 `/api/products/stock-value/on-sale`。
+2. 验证成功后查看 `git diff`，把库存总价值功能、测试配置和学习文档作为含义清晰的提交保存并推送。
+3. 简短复述“Java 循环聚合”和“MySQL `SUM` 聚合”的差别，以及 Mockito 单元测试为什么不能验证真实 SQL。
+4. 下一轮继续训练一个由学习者从空白组织的 Spring Boot 小功能；避免继续堆相似 CRUD，并保持算法每天最多一题。
+5. Docker 当前只写为“掌握基础操作并在指导下完成容器化”，暂不写“熟练掌握 Docker”。
 
-## 当前真实掌握程度（2026-07-23）
+## 当前真实掌握程度（2026-07-24）
 
 - 能理解 `Controller → Service → Mapper → 数据库` 的基本调用方向。
 - 能在提示下完成基础 CRUD、条件查询和统一响应类型。
@@ -165,7 +197,14 @@
 - 能说明 Redis Cache-Aside 查询和缓存删除流程，并通过控制台 SQL 日志判断是否命中缓存；注解参数和序列化配置仍允许查资料。
 - 已能独立完成 Git 的常用本地操作和一次功能分支合并，但发生冲突、回退提交和多人协作仍需后续练习。
 - 已能较完整地复述项目难点和解决方案，但表达中的技术名词仍需准确，例如“原子 SQL”而不是含义不明的词。
-- 已进入算法入门阶段，能够读懂并运行 HashSet 去重和暴力两数之和；HashMap 优化解法尚未完成。
+- 已进入算法入门阶段，能够读懂并运行 HashSet 去重和暴力两数之和；HashMap 优化解法已经运行成功，但代码理解和独立编写仍未掌握。
+- Maven/JAR 流程目前能说出“测试、打包、运行”三步；具体环境变量和命令路径仍需提示。
+- Actuator、数据库初始化和 Docker Compose 均已完成真实验证；Docker 已从纯复制配置进展到能理解镜像/容器、生命周期、端口、Volume、日志和网络的基础用途，但命令拼写、独立操作和完整复述仍不稳定，不能写成“熟练掌握 Docker”。
+- 能在提示下独立写出 `BigDecimal` 循环求和的核心业务方法，并理解金额不能用普通浮点数、`BigDecimal.add()` 需要重新赋值。
+- 能理解 MySQL 聚合比查询全部 Entity 后在 Java 计算减少数据传输，但 `@Select`、`SUM` 和 `COALESCE` 目前仍允许参考模板。
+- 已理解测试的预期结果应来自需求或人工计算；当 Mapper 被 Mockito 模拟时，固定返回值只验证 Service 的调用和传递，不能证明真实 SQL 正确。
+- 能根据报告最底层 `Caused by` 依次定位缺少 JWT 测试配置和 Base64 解码后长度不足，但 Spring 测试配置仍属于可复制模板。
+- 当前最明显的问题不是项目功能不足，而是推进速度超过理解速度；下一阶段必须减少配置复制，增加基础 Java 和完整小功能的亲自编写。
 - 能从长日志最底层 `Caused by` 定位环境变量缺失和临时目录权限问题，但本地运行配置仍需继续熟悉。
 
 ## 后端实习导向

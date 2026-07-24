@@ -562,7 +562,193 @@ Copy-Item -Recurse .\Easy-Job-Tutor "$env:USERPROFILE\.codex\skills\easy-job-tut
 
 原则：复制安装文档前先判断自己使用的是 Windows PowerShell 还是 Linux/macOS 终端，并确认当前工作目录。
 
-## 六、当前阶段的防错清单
+## 六、Maven、Docker 和文件操作错误
+
+### 32. 在 PowerShell 中执行 Git Bash 命令
+
+本轮把 Git Bash 路径 `/c/Users/...` 和 `ls -la` 输入 PowerShell，分别出现路径不存在和参数无法识别；查找 Java 文件时还把英文点 `.` 输入成了中文句号 `。`。
+
+检查提示符：
+
+- `PS C:\...>` 表示 PowerShell。
+- `MINGW64 ... $` 表示 Git Bash。
+- `.` 必须使用英文输入法，表示当前目录。
+
+### 33. Maven 命令和 `JAVA_HOME` 未正确配置
+
+Git Bash 先出现 `mvn: command not found`，随后 Maven 又提示 `JAVA_HOME environment variable is not defined correctly`。原系统变量中还混入了隐藏字符。
+
+处理原则：
+
+- `PATH` 决定终端能否找到 `mvn` 和 `java`。
+- `JAVA_HOME` 必须指向真实 JDK 根目录，不能指向 `bin`，也不能带隐藏字符。
+- 临时 `export` 只对当前 Git Bash 窗口生效，换终端后不会自动继承。
+
+### 34. Docker 客户端存在不等于 Docker 引擎已运行
+
+`docker --version` 成功后，构建仍出现：
+
+```text
+failed to connect to the docker API ... dockerDesktopLinuxEngine
+```
+
+原因是 Docker 命令已安装，但 Docker Desktop 后台引擎尚未启动。应先打开 Docker Desktop，再用 `docker info` 检查服务端状态。
+
+本轮还把 `docker` 两次拼成 `dockder`。出现“无法识别为命令”时，先检查拼写，不要立刻修改配置。
+
+### 35. 文件名、目录层级和自动格式化错误
+
+本轮真实出现：
+
+- 把 `sql/schema.sql` 创建成 `sql/sql/schema.sql`。
+- 把 `.env.example` 命名成带中文顿号的 `.env.example、`。
+- IDEA 自动格式化把 SQL 的关键字、字段类型和括号拆成大量单独行。
+
+创建文件后要用 `git status --short` 检查真实路径；文件名必须使用英文标点。自动格式化后必须重新阅读结果，不能看到“格式化完成”就默认正确。
+
+### 36. PowerShell、Docker 和容器 Shell 的多层引号冲突
+
+直接执行带 `mysql -e "SHOW TABLES ..."` 的 `docker exec` 时，PowerShell 和 Docker 处理引号后让 MySQL 收到了不完整 SQL，出现 1064。
+
+最终通过管道传入 SQL：
+
+```powershell
+'SHOW TABLES FROM inventory;' | docker exec -i inventory-mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD"'
+```
+
+遇到多层引号问题时，优先减少嵌套，把 SQL 通过标准输入传给容器，而不是不断增加转义符。
+
+### 37. Docker 名称和镜像标签连续拼写错误
+
+本轮出现过：
+
+- 把 `redis:7.4-alpine` 写成 `redis:7.4-apline`，导致镜像筛选为空。
+- 把 `docker-learning-redis` 写成 `docker-laerning-redis` 创建了拼错名称的容器。
+- 停止时又输入 `docker-laening-redis`，因此提示容器不存在。
+- 正确名称的新容器启动时，拼错名称的旧容器仍占用 `6381`，导致 `port is already allocated`。
+
+出现“查不到容器”或“端口已占用”时，先执行：
+
+```powershell
+docker ps -a
+```
+
+从真实列表复制容器名，不要继续凭记忆手打。
+
+### 38. Redis 命令缺少操作关键字
+
+本轮执行：
+
+```powershell
+docker exec docker-learning-redis redis-cli course docker
+```
+
+Redis 把 `course` 当成命令，返回 `ERR unknown command`。正确结构是：
+
+```text
+set 键 值
+get 键
+```
+
+例如 `redis-cli set course docker`。容器命令成功执行不代表内部 Redis 命令语法正确，需要继续查看返回值。
+
+### 39. 第一次 Volume 持久化验证没有成功
+
+删除并重建容器后第一次读取 `course` 返回空值，不能因为之前步骤显示“成功”就断言 Volume 已生效。由于当时证据不足，没有猜测唯一原因。
+
+重新验证时依次确认：
+
+1. `docker inspect` 显示 `docker-learning-redis-data -> /data`。
+2. `set` 和 `save` 都返回 `OK`。
+3. `/data` 中存在 `dump.rdb`。
+4. 删除容器、使用同一 Volume 重建后仍能读取 `course=volume`。
+
+只有完整证据链成立，才能确认持久化成功。
+
+### 40. 把容器中的 `localhost` 误认为 Windows 主机
+
+理解检查时曾认为 `inventory-app` 容器中的 `localhost` 指 Windows。正确规则是：
+
+```text
+Windows 中的 localhost       = Windows 自己
+inventory-app 中的 localhost = app 容器自己
+mysql 容器中的 localhost     = MySQL 容器自己
+```
+
+Compose 容器访问其他服务应使用服务名，例如 `mysql:3306`、`redis:6379`；容器需要访问 Windows 主机时通常使用 `host.docker.internal`。
+
+### 41. 没有核对项目文件就讲解不存在的配置
+
+本轮讲解 Compose 时，未先读取实际 `compose.yaml` 就声称项目使用了：
+
+```yaml
+restart: unless-stopped
+```
+
+实际文件中并不存在该配置，造成学习混乱。后续讲解“当前项目已有内容”前必须先读取相关文件；通用但尚未写入项目的内容只能明确标注为“扩展知识”。
+
+### 42. IDEA 只运行了一个测试方法，却误以为运行了整个测试类
+
+IDEA 命令末尾出现：
+
+```text
+ProductServiceTest,shouldCalculateOnSaleStockValue
+```
+
+表示只运行了该方法。运行整个类时，末尾只有：
+
+```text
+ProductServiceTest
+```
+
+应点击类名左侧的绿色三角，或执行 `mvn -Dtest=ProductServiceTest test`。
+
+### 43. 新终端找不到 Maven
+
+新 PowerShell 和新 Git Bash 中出现：
+
+```text
+mvn: command not found
+mvn : 无法将“mvn”项识别为 cmdlet
+```
+
+原因是之前的 `export` 只对单个 Git Bash 窗口有效，且 Maven 目录没有永久加入 Windows `Path`。本轮已设置：
+
+```text
+JAVA_HOME
+MAVEN_HOME
+%JAVA_HOME%\bin
+%MAVEN_HOME%\bin
+```
+
+新终端中通过 `mvn -v` 验证 Maven 3.9.11 与 Java 17。`JAVA_HOME` 指向 JDK 根目录，不能包含 `bin`。
+
+### 44. 完整 Spring 测试缺少 JWT 配置
+
+Mockito Service 测试能够通过，但 `mvn package` 会运行 `@SpringBootTest` 的 `contextLoads()`，它会启动完整 Spring，因此创建 `JwtTokenProvider` 时需要 JWT 密钥。
+
+第一次错误：
+
+```text
+Could not resolve placeholder 'JWT_SECRET'
+```
+
+在测试注解中加入公开的假测试密钥后，又出现：
+
+```text
+JWT密钥解码后不能少于32字节
+```
+
+原因是项目先执行 Base64 解码，原来的 32 个文字字符不等于解码后的 32 字节。最终使用“32 字节测试内容的 Base64 字符串”作为 `app.jwt.secret`，全部 6 个测试通过。
+
+原则：
+
+- Mockito 单元测试不启动完整 Spring，可能暴露不了环境配置问题。
+- `@SpringBootTest` 会加载完整上下文，需要提供启动所需的测试配置。
+- 测试密钥必须是假值，不能把真实 JWT 密钥写入测试或提交 Git。
+- 看异常时继续找到最底层 `Caused by`，修完一层后如果仍失败，再读取新的根因。
+
+## 七、当前阶段的防错清单
 
 写完 Service 后检查：
 
