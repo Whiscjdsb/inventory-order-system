@@ -160,9 +160,15 @@
 - 已能使用 `docker compose ps` 判断三个服务状态，使用 `docker compose logs app --tail 30` 从日志确认 Java 17、`/app/app.jar`、Tomcat 8080 和 Spring Boot 启动成功。
 - 已完成“统计上架商品库存总价值”功能：先亲自使用 `BigDecimal` 和 for 循环实现 `价格 × 库存` 求和，再优化为 Mapper 中的 `SUM(price * stock)` 聚合 SQL。
 - 已理解 `COALESCE(SUM(...), 0)` 用于在没有符合条件的商品时返回 0，自定义 SQL 中显式添加 `status = 1` 和 `is_deleted = 0`。
-- 已通过接口与 Navicat SQL 交叉验证总价值均为 `1644063.70`；随后补充 Mockito 测试，并能区分“测试 Java 计算逻辑”和“模拟 Mapper 返回值”的不同意义。
+- 已通过接口与 SQL 交叉验证库存总价值：Windows 本机数据库曾得到 `1644063.70`，Docker MySQL 当前得到 `990.00`；两套数据库的数据和账号互相独立，不能混用验证结果。
 - 已从 IDEA 运行整个 `ProductServiceTest`，3 个测试通过；运行 `mvn package` 时进一步发现并修复完整 Spring 上下文测试的 JWT 测试配置问题，最终全部 6 个测试通过。
 - 已在 Windows 用户环境变量中永久配置 `JAVA_HOME`、`MAVEN_HOME` 和 `Path`，新 PowerShell 中执行 `mvn -v` 能识别 Maven 3.9.11 和 Java 17。
+- 已执行 `docker compose up -d --build`，把 MySQL `SUM` 聚合版本更新到 app 容器；接口与 Docker MySQL 直接查询均返回 `990.00`，确认新镜像和 SQL 已生效。
+- 已创建 `InventoryOverviewVO` 和 `/api/products/overview`，组合商品总数、上架数量、缺货数量和上架库存总价值；Docker 环境真实返回 `1、1、0、990.00`。
+- 编写库存概览时曾误把缺货数量也设置成 `countOnSaleProducts()`，随后改为带 `status = 1`、`stock = 0` 条件的独立 `selectCount`。
+- 已创建独立的 `JAVA_ALGORITHM_ERRORS.md`，后续只记录 Java/力扣中的题意、语法、数据结构、复杂度和重做结果，与后端项目错误分开。
+- 已重做热题 100 的“两数之和”暴力解法，修正 `nums.length`、中文逗号和返回下标理解；能够说明 `return new int[]{i, j}` 与空数组兜底的用途。
+- 已完成“283. 移动零”的两次遍历原地写法，理解 `void` 方法通过修改原数组产生结果、`writeIndex` 的用途，以及两个前后循环仍为 `O(n)`、额外空间为 `O(1)`。
 
 ## 当前正在学习
 
@@ -177,10 +183,10 @@
 
 当前下一步（按优先级从高到低）：
 
-1. 执行 `docker compose up -d --build`，把新的聚合 SQL 版本更新到 app 容器，再次验证 `/api/products/stock-value/on-sale`。
-2. 验证成功后查看 `git diff`，把库存总价值功能、测试配置和学习文档作为含义清晰的提交保存并推送。
-3. 简短复述“Java 循环聚合”和“MySQL `SUM` 聚合”的差别，以及 Mockito 单元测试为什么不能验证真实 SQL。
-4. 下一轮继续训练一个由学习者从空白组织的 Spring Boot 小功能；避免继续堆相似 CRUD，并保持算法每天最多一题。
+1. 先提交并推送库存概览功能、`JAVA_ALGORITHM_ERRORS.md`、`AGENTS.md` 和本次学习总结，提交前检查 `git diff`。
+2. 力扣由学习者自行刷题；遇到困难时先发题目、自己的代码和错误表现，再进行提示和复盘记录，不提前堆完整答案。
+3. 下次重做“两数之和”和“移动零”时，重点检查数组长度、英文标点、返回下标、`void` 原地修改、第二次填零循环和复杂度说明。
+4. 返回后端主线时先解释新业务的实际用途，再开始 VO、Service、Controller 或测试；不再无目的堆相似统计接口。
 5. Docker 当前只写为“掌握基础操作并在指导下完成容器化”，暂不写“熟练掌握 Docker”。
 
 ## 当前真实掌握程度（2026-07-24）
@@ -204,6 +210,9 @@
 - 能理解 MySQL 聚合比查询全部 Entity 后在 Java 计算减少数据传输，但 `@Select`、`SUM` 和 `COALESCE` 目前仍允许参考模板。
 - 已理解测试的预期结果应来自需求或人工计算；当 Mapper 被 Mockito 模拟时，固定返回值只验证 Service 的调用和传递，不能证明真实 SQL 正确。
 - 能根据报告最底层 `Caused by` 依次定位缺少 JWT 测试配置和 Base64 解码后长度不足，但 Spring 测试配置仍属于可复制模板。
+- 能在提示下使用一个 VO 组合多个统计值，但独立组织新业务前仍需要先明确用途和字段含义；相近统计方法容易调用混淆。
+- 已理解数组使用 `nums.length`、`return` 返回并结束方法、`void` 可直接修改传入数组；这些基础概念刚完成首次复盘，仍需通过独立重做巩固。
+- 能在具体代码中判断单循环和前后两个循环为 `O(n)`、嵌套双循环为 `O(n²)`，复杂度分析目前处于入门阶段。
 - 当前最明显的问题不是项目功能不足，而是推进速度超过理解速度；下一阶段必须减少配置复制，增加基础 Java 和完整小功能的亲自编写。
 - 能从长日志最底层 `Caused by` 定位环境变量缺失和临时目录权限问题，但本地运行配置仍需继续熟悉。
 

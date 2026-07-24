@@ -748,6 +748,37 @@ JWT密钥解码后不能少于32字节
 - 测试密钥必须是假值，不能把真实 JWT 密钥写入测试或提交 Git。
 - 看异常时继续找到最底层 `Caused by`，修完一层后如果仍失败，再读取新的根因。
 
+### 45. 混淆 Windows 本机 MySQL 与 Docker MySQL
+
+重新构建容器后，使用 `backend_intern` 登录返回 401。只读查询 Docker MySQL 后确认容器数据库当时只有 `docker_user`，`backend_intern` 原先属于另一套数据库。
+
+两套连接：
+
+```text
+Windows 本机 MySQL：localhost:3306
+Docker MySQL：      localhost:3307
+app 容器访问：      mysql:3306
+```
+
+它们的账号、商品和统计结果互相独立。本轮库存总价值在本机数据库曾为 `1644063.70`，Docker MySQL 为 `990.00`。接口验证前必须确认当前应用连接的是哪套数据库，不能直接复用另一套数据库的账号和预期结果。
+
+### 46. 库存概览中复用了错误的统计方法
+
+初次组装 `InventoryOverviewVO` 时写成：
+
+```java
+overview.setOutOfStockProducts(countOnSaleProducts());
+```
+
+这会让“上架商品数”和“缺货商品数”来自同一个统计条件。正确做法是为缺货数量单独添加：
+
+```text
+status = 1
+stock = 0
+```
+
+再执行 `selectCount`。组装多个相近统计字段时，要逐项核对“字段名称 → 查询条件 → setter”，不能因为返回类型相同就复用错误方法。
+
 ## 七、当前阶段的防错清单
 
 写完 Service 后检查：
