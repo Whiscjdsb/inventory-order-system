@@ -4,7 +4,10 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.example.inventorypractice.entity.Product;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
+
+import java.math.BigDecimal;
 
 @Mapper
 public interface ProductMapper extends BaseMapper<Product> {
@@ -30,6 +33,15 @@ public interface ProductMapper extends BaseMapper<Product> {
             @Param("productId") Long productId,
             @Param("quantity") Integer quantity
     );
+
     @Update("UPDATE product SET is_deleted = 0 WHERE id = #{id}")
     int restoreById(@Param("id") Long id);
+
+    @Select("""
+    SELECT COALESCE(SUM(price * stock), 0)
+    FROM product
+    WHERE status = 1
+      AND is_deleted = 0
+    """)
+    BigDecimal calculateOnSaleStockValue();
 }

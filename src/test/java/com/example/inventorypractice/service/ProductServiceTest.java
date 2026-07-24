@@ -78,4 +78,16 @@ class ProductServiceTest {
 
         verifyNoInteractions(stockOperationService);
     }
+
+    @Test
+    void shouldCalculateOnSaleStockValue() {
+
+        when(productMapper.calculateOnSaleStockValue())
+                .thenReturn(new BigDecimal("81.00"));
+
+        BigDecimal result =
+                productService.calculateOnSaleStockValue();
+
+        assertEquals(new BigDecimal("81.00"), result);
+    }
 }

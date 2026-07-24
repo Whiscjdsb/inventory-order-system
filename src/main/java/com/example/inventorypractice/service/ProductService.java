@@ -359,4 +359,7 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
         List<Product> products = productMapper.selectList(queryWrapper);
         return products.stream().map(ProductVO::fromEntity).toList();
     }
+    public BigDecimal calculateOnSaleStockValue(){
+        return productMapper.calculateOnSaleStockValue();
+    }
     }

@@ -143,4 +143,8 @@ public class ProductController {
     public ApiResponse<List<ProductVO>> getOutOfStockProducts(){
         return ApiResponse.success(productService.getOutOfStockProducts());
     }
+    @GetMapping("/stock-value/on-sale")
+    public ApiResponse<BigDecimal> calculateOnSaleStockValue(){
+        return ApiResponse.success(productService.calculateOnSaleStockValue());
+    }
 }
