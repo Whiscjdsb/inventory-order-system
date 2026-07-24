@@ -14,6 +14,7 @@ import com.example.inventorypractice.entity.StockOperation;
 import com.example.inventorypractice.exception.BusinessException;
 import com.example.inventorypractice.mapper.ProductMapper;
 import com.example.inventorypractice.mapper.StockOperationMapper;
+import com.example.inventorypractice.vo.InventoryOverviewVO;
 import com.example.inventorypractice.vo.ProductVO;
 import com.example.inventorypractice.vo.StockOperationVO;
 import org.springframework.cache.annotation.CacheEvict;
@@ -361,5 +362,18 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
     }
     public BigDecimal calculateOnSaleStockValue(){
         return productMapper.calculateOnSaleStockValue();
+    }
+
+    public InventoryOverviewVO getInventoryOverview() {
+        InventoryOverviewVO overview = new InventoryOverviewVO();
+        overview.setTotalProducts(countProducts());
+        overview.setOnSaleProducts(countOnSaleProducts());
+        LambdaQueryWrapper<Product> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(Product::getStatus ,1);
+        queryWrapper.eq(Product::getStock, 0);
+        Long outOfStockProducts = productMapper.selectCount(queryWrapper);
+        overview.setOutOfStockProducts(outOfStockProducts);
+        overview.setOnSaleStockValue(calculateOnSaleStockValue());
+        return overview;
     }
     }

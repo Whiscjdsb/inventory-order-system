@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.example.inventorypractice.common.ApiResponse;
 import com.example.inventorypractice.dto.*;
 import com.example.inventorypractice.service.ProductService;
+import com.example.inventorypractice.vo.InventoryOverviewVO;
 import com.example.inventorypractice.vo.ProductVO;
 import com.example.inventorypractice.vo.StockOperationVO;
 import io.swagger.v3.oas.annotations.Operation;
@@ -146,5 +147,9 @@ public class ProductController {
     @GetMapping("/stock-value/on-sale")
     public ApiResponse<BigDecimal> calculateOnSaleStockValue(){
         return ApiResponse.success(productService.calculateOnSaleStockValue());
+    }
+    @GetMapping("/overview")
+    public ApiResponse<InventoryOverviewVO> getInventoryOverview(){
+        return ApiResponse.success(productService.getInventoryOverview());
     }
 }
