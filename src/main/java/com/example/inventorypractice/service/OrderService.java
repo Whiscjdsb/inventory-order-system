@@ -34,14 +34,7 @@ public class OrderService {
 
     @Transactional
     public OrderVO createOrder(String username,CreateOrderRequest request) {
-        LambdaQueryWrapper<SysUser> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(SysUser::getUsername, username);
-        SysUser user = sysUserMapper.selectOne(queryWrapper);
-
-        if (user == null) {
-            throw new BusinessException(401, "用户不存在");
-        }
-
+        SysUser user = getUserByUsername(username);
         Product product =
                 productMapper.selectById(request.getProductId());
 
@@ -73,13 +66,7 @@ public class OrderService {
 
     }
     public List<OrderVO> getMyOrders(String username){
-        LambdaQueryWrapper<SysUser> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(SysUser::getUsername, username);
-        SysUser user = sysUserMapper.selectOne(queryWrapper);
-
-        if (user == null) {
-            throw new BusinessException(401, "用户不存在");
-        }
+        SysUser user = getUserByUsername(username);
         LambdaQueryWrapper<SysOrder> orderQueryWrapper = new LambdaQueryWrapper<>();
         orderQueryWrapper.eq(SysOrder::getUserId, user.getId());
         orderQueryWrapper.orderByDesc(SysOrder::getId);
@@ -96,12 +83,7 @@ public class OrderService {
             throw  new BusinessException(400,"订单ID必须大于0");
         }
 //        2. 根据username查询当前用户
-        LambdaQueryWrapper<SysUser> userQueryWrapper = new LambdaQueryWrapper<>();
-        userQueryWrapper.eq(SysUser::getUsername, username);
-        SysUser user = sysUserMapper.selectOne(userQueryWrapper);
-        if (user == null) {
-            throw new BusinessException(401, "用户不存在");
-        }
+        SysUser user = getUserByUsername(username);
 //        3. 根据orderId查询订单
         SysOrder order = sysOrderMapper.selectById(orderId);
 //        4. 判断订单是否属于当前用户
@@ -122,5 +104,21 @@ public class OrderService {
 //        8. 重新查询订单并返回OrderVO
         SysOrder updatedOrder =sysOrderMapper.selectById(orderId);
         return OrderVO.fromEntity(updatedOrder);
+    }
+
+    private SysUser getUserByUsername(String username) {
+        LambdaQueryWrapper<SysUser> queryWrapper =
+                new LambdaQueryWrapper<>();
+
+        queryWrapper.eq(SysUser::getUsername, username);
+
+        SysUser user =
+                sysUserMapper.selectOne(queryWrapper);
+
+        if (user == null) {
+            throw new BusinessException(401, "用户不存在");
+        }
+
+        return user;
     }
 }
