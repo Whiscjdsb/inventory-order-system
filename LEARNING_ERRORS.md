@@ -779,6 +779,48 @@ stock = 0
 
 再执行 `selectCount`。组装多个相近统计字段时，要逐项核对“字段名称 → 查询条件 → setter”，不能因为返回类型相同就复用错误方法。
 
+### 47. 把商品 ID 设置成订单主键
+
+创建订单时曾写成：
+
+```java
+sysOrder.setId(product.getId());
+```
+
+商品 ID 和订单 ID 属于不同表、不同业务含义。订单 `id` 使用 `AUTO_INCREMENT`，插入前不应手动设置；MyBatis-Plus 插入成功后会把数据库生成的订单 ID 回填到 Entity。否则多个订单购买同一商品时会发生订单主键冲突。
+
+### 48. 订单错误码和状态文字不一致
+
+创建订单时曾把“商品不存在”写成 `401`，应使用 `404`；`401` 表示未认证。订单状态 `1` 在表中定义为“已创建”，VO 中曾先后写成“待创建”和错别字“乙创建”，最终统一为“已创建”。
+
+原则：新增状态字段时同步核对“数据库注释 → Entity 数值 → VO 状态文字 → 接口响应”，异常状态码也必须与错误类型一致。
+
+### 49. 取消订单时遗漏用户判空和安全对象比较
+
+取消订单根据用户名查询用户后，最初没有判断 `user == null`，后续 `user.getId()` 存在空指针风险；订单归属最初使用 `order.getUserId().equals(user.getId())`，后改为：
+
+```java
+Objects.equals(order.getUserId(), user.getId())
+```
+
+同时把错误消息“订单状态以变化请重试”修正为“订单状态已变化，请重试”。涉及当前用户的 Service 代码要先完成“查询 → 判空 → 使用 ID”的顺序。
+
+### 50. 重复创建库存操作对象但没有保存
+
+`ProductService.deductStock()` 和入库方法中曾先创建并填充一个 `StockOperation` 对象，但没有调用 Mapper 插入，随后又调用：
+
+```java
+stockOperationService.recordOperation(...)
+```
+
+真正的保存发生在 `StockOperationService` 的：
+
+```java
+stockOperationMapper.insert(operation);
+```
+
+未使用的前一个对象属于重复死代码，应删除。判断“是否保存数据库”要继续追踪到 `insert`、`update` 或实际 Mapper SQL，不能只看到 `new Entity()` 和 setter 就认为已经持久化。
+
 ## 七、当前阶段的防错清单
 
 写完 Service 后检查：

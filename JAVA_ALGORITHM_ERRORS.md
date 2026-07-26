@@ -1,6 +1,6 @@
 # Java 与算法刷题复盘
 
-更新时间：2026-07-24
+更新时间：2026-07-25
 
 用途：单独记录 Java/力扣刷题中真实遇到的问题，包括题意理解、解题思路、Java 语法、数据结构选择、边界条件和复杂度分析。Spring Boot、MySQL、Redis、Docker、Git 等项目问题继续记录在 `LEARNING_ERRORS.md`。
 
@@ -112,3 +112,153 @@ writeIndex 从 0 开始
 - 只有循环变量和 `writeIndex`，额外空间复杂度为 `O(1)`。
 
 下次重做结果：已完成正确的两次遍历写法；后续重做时应独立写出第二个填零循环，并能解释 `void` 和 `O(n)`。
+
+### Java 基础：统计数组中的正数
+
+日期：2026-07-25
+
+练习要求：编写 `countPositive(int[] nums)`，统计数组中大于 0 的元素数量，并通过 `return` 返回结果。
+
+自己的最初思路：使用 `count` 从 0 开始遍历数组，遇到正数就执行 `count++`，最后 `return count`。
+
+遇到的问题：
+
+- 核心统计方法能够独立写对，但类名最初写成小驼峰 `countPositive`，不符合 Java 类名规范。
+- 提前写了类的结束大括号，导致 `main()` 方法位于类外。
+- IDEA 项目出现“源发行版 21 与 `--enable-preview` 一起使用时无效”，属于 JDK、语言级别和预览参数冲突，不是业务代码错误。
+
+正确结构：
+
+```text
+CountPositive 类 {
+    countPositive 方法
+    main 方法
+}
+```
+
+关键 Java 知识：
+
+- 类名使用大驼峰 `CountPositive`，方法名使用小驼峰 `countPositive`，公开类名应与文件名一致。
+- Java 17 中方法必须位于类的大括号内部。
+- `return count` 把方法计算出的整数交给调用者；调用者可以用 `int result` 接收。
+- `System.out.println(result)` 只负责把结果显示在控制台。
+- 普通基础代码不需要 `--enable-preview`；项目 SDK、Language level 和字节码版本应保持一致。
+
+时间复杂度与空间复杂度：
+
+- 遍历数组一次，时间复杂度为 `O(n)`。
+- 只使用 `count` 和循环变量，额外空间复杂度为 `O(1)`。
+
+下次重做结果：修正类结构和 Java 版本配置后运行成功，控制台输出 `2`，进程退出码为 `0`。
+
+### Java 基础：ArrayList、HashMap 与集合遍历
+
+日期：2026-07-25
+
+练习内容：
+
+- 使用 `ArrayList<Integer>` 筛选并保存数组中的正数，运行得到 `[3, 5]`。
+- 使用 `HashMap<Integer, Integer>` 统计数组 `{1, 2, 1, 3, 2, 1}` 中每个数字出现的次数。
+- 遍历 `Map.Entry` 找出出现次数最多的数字。
+
+最初不理解的内容：
+
+- `ArrayList` 的含义以及它和固定长度数组的区别。
+- `put()`、`get()`、`containsKey()` 分别做什么。
+- 增强 for 循环 `for (int num : nums)` 如何取得数组元素。
+- `for (Map.Entry<Integer, Integer> entry : counts.entrySet())` 如何逐项取得 Map 的键和值。
+
+已经理解：
+
+- `ArrayList` 是底层使用数组、长度可以动态增长的列表，`add()` 用于添加元素。
+- 当前统计 Map 保存的是“数字 → 出现次数”；`put(key, value)` 会新增或更新数据，`get(key)` 取得对应的值。
+- 增强 for 循环每次取得一个数组元素；遍历 `entrySet()` 时每次取得一组键和值。
+- `entry.getKey()` 得到数字，`entry.getValue()` 得到出现次数。
+- 使用 `maxCount` 保存当前最大次数，同时用 `mostFrequentNumber` 保存对应数字。
+
+运行结果：
+
+```text
+{1=3, 2=2, 3=1}
+1出现了3次
+2出现了2次
+3出现了1次
+出现最多次的数字是：1
+```
+
+复杂度：
+
+- 统计数组和遍历 Map 总时间复杂度为 `O(n)`。
+- Map 最多保存所有不同数字，额外空间复杂度为 `O(k)`，`k` 是不同数字的数量。
+
+### 题目：1. 两数之和（HashMap 解法重新理解）
+
+日期：2026-07-25
+
+本次进展：在理解 `HashMap` 的 `put()`、`get()` 和 `containsKey()` 后，已经能够独立重新写出 HashMap 解法，不再只是复制模板。
+
+核心思路：
+
+```text
+Map 保存“已经遍历过的数字 → 该数字的下标”
+→ 计算 complement = target - nums[i]
+→ 如果 Map 中已有 complement，返回补数旧下标和当前下标
+→ 如果没有，保存当前数字和当前下标
+```
+
+关键理解：
+
+- `complement` 表示当前数字距离目标值还差多少，即“补数”。
+- `map.get(complement)` 取得补数以前出现时的下标。
+- 必须先查询再执行 `map.put(nums[i], i)`，避免当前元素与自己配对。
+- `return new int[]{previousIndex, i}` 返回的是两个数组下标。
+
+验证数据：
+
+```text
+nums = [3, 2, 4]
+target = 6
+输出下标：1、2
+```
+
+复杂度：
+
+- 平均时间复杂度：`O(n)`。
+- 额外空间复杂度：`O(n)`。
+
+下次复习要求：不要求背变量名，但要能独立说明“计算补数 → 查询以前是否出现 → 返回下标 → 未找到则保存当前数字”的顺序。
+
+### Java 基础：对象、字符串比较、null 与异常
+
+日期：2026-07-25 至 2026-07-26
+
+练习内容：
+
+- 使用 `ProductItem` 复习构造方法、成员变量、Getter 和成员方法。
+- 从 `List<ProductItem>` 中按照商品名称查找对象。
+- 编写扣库存方法，并对非法数量和库存不足主动抛出异常。
+- 使用 `try-catch` 捕获库存不足异常。
+
+实际遇到的问题：
+
+- 查找商品时写成 `product.equals(targetName)`，把完整的 `ProductItem` 对象与 `String` 比较。
+- 查询返回 `null` 后如果直接调用 `result.getStock()`，会发生 `NullPointerException`。
+- 对 `catch` 中应该填写哪一种异常类型不确定。
+
+正确理解：
+
+- 比较商品名称应该使用 `product.getName().equals(targetName)`；比较的是同一含义、同一类型的数据。
+- 字符串内容使用 `equals()`，两个可能为 `null` 的对象使用 `Objects.equals()`。
+- 方法可能返回 `null` 时，调用 Getter 前必须判空，或者由业务层改为抛出明确异常。
+- `throw` 会立即终止当前方法；未处理异常会让程序以非零退出码结束。
+- `catch` 应捕获实际抛出的异常类型或它的父类；多个 `catch` 中子类写在父类前面。
+- `IllegalArgumentException` 表示参数不合法，`IllegalStateException` 表示对象当前状态不允许操作，两者都继承 `RuntimeException`。
+
+运行验证：
+
+```text
+正常扣减：库存从15变成12，退出码0
+超量扣减：抛出IllegalStateException: 库存不足，未捕获时退出码1
+```
+
+当前掌握程度：构造方法和 Getter 属于已有知识，不再按零基础反复训练；后续重点放在对象字段选择、null 安全、集合组合使用和独立组织完整业务。
