@@ -4,6 +4,7 @@ import com.example.inventorypractice.common.ApiResponse;
 import com.example.inventorypractice.dto.CreateOrderRequest;
 import com.example.inventorypractice.service.OrderService;
 import com.example.inventorypractice.vo.OrderVO;
+import com.example.inventorypractice.vo.PageResult;
 import jakarta.validation.Valid;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -27,13 +28,17 @@ public class OrderController {
         return ApiResponse.success(orderVO);
     }
     @GetMapping("/my")
-    public ApiResponse<List<OrderVO>> getMyOrders(
-            Authentication authentication
-    ){
+    public ApiResponse<PageResult<OrderVO>> getMyOrders(
+            Authentication authentication,
+            @RequestParam(defaultValue = "1") long pageNum,
+            @RequestParam(defaultValue = "10") long pageSize
+    ) {
         String username = authentication.getName();
-        List<OrderVO> orderVOs = orderService.getMyOrders(username);
-        return ApiResponse.success(orderVOs);
 
+        PageResult<OrderVO> result =
+                orderService.getMyOrders(username, pageNum, pageSize);
+
+        return ApiResponse.success(result);
     }
     @PatchMapping("/{orderId}/cancel")
     public ApiResponse<OrderVO> cancelOrder(
