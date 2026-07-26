@@ -12,6 +12,9 @@
 - 统一响应与异常处理
 - Swagger / OpenAPI 接口文档
 - Actuator 健康检查
+- 用户创建订单与查询本人订单
+- 原子取消订单并自动退回库存
+- 订单、商品库存和库存记录的事务一致性
 
 ## 技术栈
 
@@ -123,8 +126,9 @@ docker compose down
 - Redis：宿主机 `6380` → 容器 `6379`
 
 `docker compose down` 会保留数据卷；不要随意使用 `docker compose down -v`，因为它会删除 MySQL 和 Redis 数据。
+
 ## 后续计划
 
-- 补充数据库初始化 SQL
-- 增加更多核心自动化测试
-- 学习 Docker 容器化部署
+- 补充订单核心自动化测试
+- 完善项目部署说明
+- 继续巩固 Java 与 Spring Boot 核心知识

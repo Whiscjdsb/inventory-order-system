@@ -136,15 +136,6 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
         Integer beforeStock =
                 afterStock + quantity;
 
-
-        StockOperation stockOperation = new StockOperation();
-        stockOperation.setProductId(productId);
-        stockOperation.setOperationType(2);
-        stockOperation.setQuantity(quantity);
-        stockOperation.setBeforeStock(beforeStock);
-        stockOperation.setAfterStock(afterStock);
-        stockOperation.setCreateTime(LocalDateTime.now());
-
         stockOperationService.recordOperation(productId, 2, quantity, beforeStock, afterStock);
 
     }
@@ -170,13 +161,6 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
         Integer afterStock = updatedProduct.getStock();
         Integer beforeStock = afterStock - quantity;
 
-        StockOperation stockOperation = new StockOperation();
-        stockOperation.setProductId(productId);
-        stockOperation.setOperationType(1);
-        stockOperation.setQuantity(quantity);
-        stockOperation.setBeforeStock(beforeStock);
-        stockOperation.setAfterStock(afterStock);
-        stockOperation.setCreateTime(LocalDateTime.now());
         stockOperationService.recordOperation(productId, 1, quantity, beforeStock, afterStock);
         return ProductVO.fromEntity(updatedProduct);
     }

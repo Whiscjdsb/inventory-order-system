@@ -47,3 +47,22 @@ CREATE TABLE IF NOT EXISTS `sys_user` (
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_0900_ai_ci
   COMMENT='系统用户表';
+
+CREATE TABLE IF NOT EXISTS `sys_order` (
+   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '订单ID',
+   `user_id` bigint NOT NULL COMMENT '用户ID',
+   `product_id` bigint NOT NULL COMMENT '商品ID',
+   `quantity` int NOT NULL COMMENT '购买数量',
+   `unit_price` decimal(10, 2) NOT NULL COMMENT '下单时商品单价',
+    `total_price` decimal(12, 2) NOT NULL COMMENT '订单总价',
+    `status` tinyint NOT NULL DEFAULT 1 COMMENT '状态：1已创建，2已取消',
+    `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_order_user_id` (`user_id`),
+    KEY `idx_order_product_id` (`product_id`)
+    ) ENGINE=InnoDB
+    DEFAULT CHARSET=utf8mb4
+    COLLATE=utf8mb4_0900_ai_ci
+    COMMENT='订单表';
