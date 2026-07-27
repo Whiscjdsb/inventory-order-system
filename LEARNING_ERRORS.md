@@ -821,6 +821,35 @@ stockOperationMapper.insert(operation);
 
 未使用的前一个对象属于重复死代码，应删除。判断“是否保存数据库”要继续追踪到 `insert`、`update` 或实际 Mapper SQL，不能只看到 `new Entity()` 和 setter 就认为已经持久化。
 
+### 51. 分页时导入了错误的 `Page`，Controller 仍调用旧方法
+
+订单分页首次编译时，IDEA 自动导入了：
+
+```java
+org.springframework.data.domain.Page
+```
+
+它是 Spring Data 的分页接口，属于抽象类型，不能通过 `new Page<>(...)` 创建对象，也不符合 MyBatis-Plus `selectPage()` 要求的 `IPage` 类型。正确导入是：
+
+```java
+com.baomidou.mybatisplus.extension.plugins.pagination.Page
+```
+
+同时 Service 的方法已经从：
+
+```java
+getMyOrders(String username)
+```
+
+改为接收 `username`、`pageNum`、`pageSize`，但 Controller 一开始仍然只传了 `username`，因此出现“实际参数列表和形式参数列表长度不同”。
+
+以后修改方法签名时要同步检查：
+
+- 方法的所有调用位置。
+- Controller 和 Service 的返回类型。
+- 同名类的完整包名。
+- 修改后运行 `mvn test`，以最后一次输出的 `BUILD SUCCESS` 为准。
+
 ## 七、当前阶段的防错清单
 
 写完 Service 后检查：
