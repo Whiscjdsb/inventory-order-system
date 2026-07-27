@@ -17,7 +17,8 @@ public interface ProductMapper extends BaseMapper<Product> {
             update_time = CURRENT_TIMESTAMP
         WHERE id = #{productId}
           AND stock >= #{quantity}
-        AND status = 1        
+        AND status = 1
+        AND is_deleted = 0
        """)
     int deductStock(
             @Param("productId") Long productId,
