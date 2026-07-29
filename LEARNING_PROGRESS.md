@@ -1,6 +1,6 @@
-# inventory-practice 学习进度
+# inventory-order-system 学习进度
 
-更新时间：2026-07-26（完成订单分页查询，并完成一轮 Java 核心基础复盘）
+更新时间：2026-07-29（完成 Java 主动编码、项目排错复盘、JWT/Redis 表达和 SQL 日统计）
 
 ## 当前技术栈
 
@@ -200,6 +200,20 @@
 - 已理解 Spring Service 默认通常是单例 Bean，Mapper 等固定依赖适合作为 `final` 成员变量，用户名、商品 ID 等单次请求数据应放在方法参数或局部变量中。
 - 已新增通用 `PageResult<T>`，把“我的订单”改为 MyBatis-Plus 分页查询；能够说明 `Page` 保存分页条件、`IPage` 保存查询结果、`PageResult<OrderVO>` 面向接口响应。
 - 已通过 `mvn test` 验证 7 个测试全部通过，并通过真实接口验证订单分页结果：`total = 1`、`current = 1`、`size = 10`，当前页返回订单 1。
+- 已不看代码复述本人订单分页链路，能够区分 `total` 是全部符合条件的记录数、`records` 是当前页列表；仍需注意 Controller 最初传入的是 `username`，Service 再查询 `userId`。
+- 已再次复述订单创建和原子取消流程，能够说明 `user_id` 防止越权取消、订单 `status = 1` 防止重复取消、`affectedRows = 1` 才允许退库存。
+- 已核对并修复原子扣库存 SQL 缺少 `is_deleted = 0` 的问题，`mvn test` 通过并已提交；理解这用于防止并发情况下继续修改刚被逻辑删除的商品。
+- 已完成 Redis 复盘：第一次未命中查询 MySQL 并回填，后续命中直接返回；修改后删除缓存；当前未缓存空结果，因此没有解决缓存穿透。
+- 已完成 JWT 复盘：Token 保存用户名、用户 ID、角色、签发时间和过期时间；过滤器实际读取用户名和角色写入 `SecurityContext`，订单 Service 仍根据用户名查询用户 ID。
+- 已掌握常见 HTTP 状态码的基础含义：`200` 成功、`400` 请求或业务条件错误、`401` 未认证、`403` 无权限、`404` 资源不存在、`405` 请求方式错误、`500` 服务器内部错误。
+- 已能按“项目用途 → 技术栈 → 核心功能 → 原子 SQL、事务、Redis 三个亮点”完成一分钟项目介绍，仍需继续提高术语准确性和表达流畅度。
+- 已详细学习 JDBC、MySQL Driver、HikariCP、MyBatis 和 MyBatis-Plus 的分层关系，能够说明 Mapper 调用最终仍通过 JDBC 访问 MySQL。
+- 已复习 Spring 与 Spring Boot、IoC、DI、Bean、AOP、Spring MVC、Starter、自动配置、内嵌 Tomcat、Actuator 和可执行 JAR 的作用。
+- 已核对当前项目没有自定义 `@Aspect`，但 `@Transactional`、`@Cacheable` 使用了 Spring 代理思想；旧项目中的日志、耗时、权限和限流切面暂不视为已掌握。
+- 已复习事务 ACID、隔离级别、MVCC、InnoDB、Redo Log、Undo Log、聚簇索引、二级索引、覆盖索引、回表、最左前缀、`EXPLAIN`、悲观锁和条件更新。
+- 已能够区分 Dockerfile 与 Compose：Dockerfile 构建应用镜像，Compose 组合 app、MySQL、Redis 服务；能够说明容器使用 `mysql:3306`、Windows 使用 `localhost:3307`。
+- 已核对当前 4 个测试文件中共有 7 个 `@Test` 方法；理解 JUnit 负责运行和断言，Mockito 负责模拟依赖，现有单元测试不能证明真实 SQL、Redis 和完整 HTTP 链路。
+- 已分析三类福州 Java 岗位：大型企业加分技术较多、小公司职责不透明、初级岗位与当前项目高度匹配；能够区分岗位必需项与加分项，不再因为未学完全部框架而停止投递。
 
 ## 当前正在学习
 
@@ -214,10 +228,97 @@
 
 当前下一步（按优先级从高到低）：
 
-1. 停止继续增加普通业务接口，不看代码复述订单创建、本人订单分页查询和取消订单的完整链路。
-2. 通过现有项目练习独立修改、错误定位和测试，而不是继续复制新功能。
-3. 继续交替巩固 Java 核心、MySQL、Spring、Redis 高频面试知识，并保持少量简单算法练习。
-4. 把 README 补成更完整的开发者对接文档后，完善简历项目描述并开始持续投递。
+1. 从当前四张表开始进行 SQL 多表查询实战，先掌握 `JOIN`、`GROUP BY`、`HAVING` 和子查询。
+2. 每天保持 Java 主动编码和 1～2 道简单算法题，减少只听概念、不写代码的时间。
+3. 通过现有项目练习单元测试、错误定位、项目讲解和 README 对接文档，不再增加普通 CRUD。
+4. 从现在开始每天投递和沟通 Java 后端实习岗位，同时记录岗位要求，按真实 JD 调整加分技术学习顺序。
+
+## 当前达标判断（2026-07-27）
+
+- **项目展示门槛：已达到。** 项目已有商品、库存、认证、Redis、订单、并发控制、测试、Swagger、Git 和 Docker 部署。
+- **开始投递门槛：已达到。** 可以立即投递初级 Java 后端和实习岗位，不需要等待 Nacos、RabbitMQ、Spring Cloud 全部学完。
+- **稳定通过技术面门槛：尚未达到。** 主要短板是 Java 和 SQL 独立编写、框架知识主动表达、真实 Bug 排查和多表查询。
+- **微服务熟练门槛：未达到。** 旧项目中的 AOP、RabbitMQ、Nacos 和微服务只是接触过，不应写成“熟练掌握”。
+
+## 后续十四天计划（每天约六小时）
+
+每天固定保留：
+
+- Java/算法主动编码：1.5～2 小时。
+- 当日主线实战：2～3 小时。
+- 项目复盘、测试或面试表达：1 小时。
+- 岗位筛选、沟通和投递：1 小时。
+
+### 第 1 天：SQL JOIN
+
+- 使用 `sys_order`、`sys_user`、`product` 写不少于 8 条多表查询。
+- 独立完成 1 道数组题和 1 道 HashMap 题。
+- 输出：能查询订单 ID、用户名、商品名、数量、单价和总价。
+
+### 第 2 天：SQL 统计
+
+- 练习 `GROUP BY`、聚合函数、`HAVING` 和子查询，不少于 8 条 SQL。
+- 复习集合、异常和泛型，独立写 2 个小方法。
+- 输出：能统计用户订单数、消费总额和商品销量。
+
+### 第 3 天：MySQL 与 Java
+
+- 使用 `EXPLAIN` 对 3 条真实 SQL 查看执行计划，说明 `type`、`key`、`rows`。
+- 复习 Java 面向对象、Lambda、Stream，并完成 2 道简单题。
+- 输出：写一份索引是否有效的简短判断。
+
+### 第 4 天：Spring 与排错
+
+- 不看文档复述一次完整 HTTP 请求链路、IoC/DI、事务和 JWT。
+- 人为制造并修复 2 个安全的小错误，例如错误方法参数或错误 Mapper 返回值。
+- 输出：`mvn test` 最终通过，并能说明错误定位过程。
+
+### 第 5 天：Redis 与测试
+
+- 练习 Redis 五种常用数据结构及 TTL；复述缓存穿透、击穿和雪崩。
+- 阅读现有测试，独立补充 1 个有业务价值的 Service 单元测试。
+- 输出：测试通过，并能说明它证明和没有证明什么。
+
+### 第 6 天：项目对接与简历
+
+- 补充 README 的项目结构、认证流程、接口概览、启动步骤和常见错误。
+- 完善一页后端实习简历和 GitHub 项目描述。
+- 输出：另一位开发者能根据 README 启动项目。
+
+### 第 7 天：第一轮验收
+
+- 不看代码完成项目一分钟介绍和三个核心难点说明。
+- 独立完成 5 道 SQL、小型 Java 方法和一次完整测试。
+- 输出：根据结果重新判断技术面差距，不达标的部分进入下一周复习清单。
+
+### 第 8～10 天：RabbitMQ
+
+- 第 8 天：Producer、Consumer、Exchange、Queue、Routing Key。
+- 第 9 天：确认、重试、死信队列、重复消费和幂等。
+- 第 10 天：完成一个最小 Spring Boot 消息案例并写运行说明。
+
+### 第 11 天：Nginx
+
+- 学习反向代理、静态资源、端口转发和基础负载均衡。
+- 输出：通过 Nginx 转发到 Spring Boot 健康检查或接口。
+
+### 第 12～14 天：Spring Cloud 与 Nacos
+
+- 第 12 天：理解单体与微服务，建立两个最小服务，学习 OpenFeign 调用。
+- 第 13 天：使用 Nacos 完成服务注册、发现和基础配置管理。
+- 第 14 天：学习 Gateway 基础路由，完成调用链复盘和简历技术栈校准。
+
+## 达标后的长期每日安排
+
+当第 7 天验收达到“能独立写基础 Java、SQL 和解释项目”后，每天仍按六小时执行：
+
+- 1.5 小时：Java 与算法，保持编码手感。
+- 1 小时：SQL/MySQL 或 Redis 轮换练习。
+- 1 小时：项目测试、Bug 修复、文档或部署维护。
+- 1 小时：针对当天岗位要求复习面试题。
+- 1.5 小时：岗位筛选、沟通、投递和面试复盘。
+
+已经进入面试流程时，优先复习对应 JD 中明确要求的技术，不为了增加技术名词临时堆新框架。
 
 ## 当前真实掌握程度（2026-07-26）
 
@@ -429,3 +530,163 @@ ProductVO productVO = new ...;      // 里面的单个对象——冲突！
 新任务开始时先说明：
 
 > 先读取 AGENTS.md、LEARNING_PROGRESS.md 和 LEARNING_ERRORS.md，然后从“当前下一步”继续。
+
+## 2026-07-28：简历、项目改名与投递策略
+
+### 已完成
+
+- 已完成一页式 Java 后端实习简历初稿，PDF 文字能够正常提取，没有文字重叠或截断。
+- 教育经历已确认：福建农林大学、数据科学与大数据技术、本科、2024 年入学、预计 2028 年毕业、CET-4。
+- 简历中的个人项目统一命名为“库存与订单管理系统”，角色写作“Java 后端开发｜个人项目”，不写“项目负责人”。
+- 专业技能从八条压缩为五条：Java 基础、Spring Boot 分层、MySQL、Redis/Security/JWT、工程与测试工具；技能栏负责说明“会什么”，项目经历负责证明“在哪里使用、解决了什么问题”。
+- 项目经历已突出三项核心证据：带库存条件的原子扣减 SQL、`@Transactional` 保证订单与库存一致性、订单状态条件更新防止重复取消和重复退库存。
+- 已确认简历当前需要修正：增加“Java 后端开发实习”求职方向、教育时间写到预计毕业年份、项目角色补充“Java 后端开发”、删除出生年月、将 PDF 改成正式文件名。
+- 推荐简历文件名：`万晖-Java后端开发实习-福建农林大学-2028届.pdf`。
+- 项目文件夹已由 `inventory-practice` 改为 `inventory-order-system`，Git 远程地址已更新到同名 GitHub 仓库。
+- 文件夹改名后已通过 Docker Compose 重新构建并启动 app、MySQL、Redis；MySQL 和 Redis 显示 Healthy，应用容器显示 Started。
+- 已在 `compose.yaml` 使用固定 Compose 项目名 `inventory-practice`，避免文件夹改名后创建新的空数据卷。
+
+### 本轮概念结论
+
+- SSM 指 Spring、Spring MVC、MyBatis；当前项目使用的是 Spring Boot、Spring MVC、MyBatis-Plus，可理解为更现代、配置更简化的组合。
+- Spring Boot 实习阶段重点不是框架源码，而是启动与配置、IoC/DI、Controller/Service/Mapper 分层、RESTful API、参数校验、异常处理、事务、测试、Maven 打包及请求链路表达。
+- 当前项目已经覆盖多数 Spring Boot 实际用法；主要短板是脱离参考独立组织业务、Java/SQL 基础、真实错误定位和主动表达。
+- 当前招聘中确实有岗位列出 Spring Cloud、Nacos 和 MQ，但需要区分核心要求与加分项。缺少一两个加分技术时仍应投递，不能等待技术全部学完。
+- 微服务补学目标暂定为“能够运行和解释基础案例”：Nacos 服务注册与发现、OpenFeign 服务调用、Gateway 路由、RabbitMQ 基础消息收发；达到这一程度后才可在简历中写“了解”。
+
+### 当前真实达标判断
+
+- **项目展示门槛：已达到。** 项目内容足够支撑一段 Java 后端个人项目经历。
+- **开始投递门槛：已达到。** 简历完成必要修改后应立即开始投递，不等待 Spring Cloud 和 MQ 全部学完。
+- **稳定技术面门槛：尚未达到。** 继续加强 Java 主动编码、SQL 多表查询、项目讲解和错误排查。
+- **Spring Cloud/MQ：尚未掌握。** 旧项目中接触过不等于掌握，当前不能在简历中写“熟练”。
+
+### 当前下一步
+
+1. 修改并导出正式 PDF 简历，当天沟通或投递不少于 3 个匹配度较高的 Java 后端实习岗位，优先确认是否支持线上面试。
+2. 使用 `sys_user`、`sys_order`、`product` 独立完成不少于 5 条 `JOIN` 查询，至少输出订单 ID、用户名、商品名、数量、单价和总价。
+3. 独立完成 1 道数组简单题和 1 道 HashMap 简单题，先自行定位错误，再请求提示。
+4. 脱离代码复述创建订单、防止超卖、事务回滚、JWT 请求链路和 Redis 缓存更新策略。
+5. 在持续投递的同时，用约 7 天补 Spring Cloud、Nacos、OpenFeign、Gateway 和 RabbitMQ 基础，不中断 Java、SQL 与项目复盘。
+
+### 焦虑时的执行规则
+
+- 不再同时展开 Java、SQL、算法、Nacos、MQ、Spring Cloud、简历和投递全部任务。
+- 焦虑明显时，当天只保留一个关键结果：优先完成简历并投递 3 个岗位。
+- 已达到投递门槛不等于已经稳定通过技术面；两者可以同时推进，不需要等到“全部学会”才投递。
+
+## 2026-07-28：微服务、RabbitMQ、Java 与面试表达实战
+
+### Spring Cloud 与 RabbitMQ
+
+- 使用旧 `springboot-practice` 项目完成基础案例运行，明确该项目仍是参考项目，不替代主线项目。
+- 启动 Nacos 容器并在服务列表中确认 `gateway-service`、`springboot-practice` 和 `notification-service` 的注册关系。
+- 通过 Gateway 路由访问通知服务，理解 `Path`、`StripPrefix=1` 和 `lb://服务名` 的作用。
+- 使用 JWT 登录后，经 Gateway 成功访问通知服务；能够区分 Gateway 负责入口和路由、Nacos 负责查找服务地址、OpenFeign 负责发送服务间 HTTP 请求。
+- 验证完整调用链：`Gateway → springboot-practice → OpenFeign → notification-service`。
+- 停止通知服务后实际得到 Fallback 降级响应，重新启动后调用恢复。
+- 通过创建任务触发 RabbitMQ，日志中同时确认 Producer 发送和 Consumer 接收处理。
+- 已理解基础消息流：`Producer → Exchange → Queue → Consumer`，以及异步处理和业务解耦的意义。
+- 已接触持久化队列、生产者确认、ACK、重试、死信队列和幂等等可靠性概念，但没有在当前案例中完整实现。
+- 当前掌握程度：能够运行基础案例并在提示下解释核心流程，简历最多写“了解 Spring Cloud Gateway、Nacos、OpenFeign 和 RabbitMQ”，不能写“熟练掌握”或“实现可靠消息投递”。
+
+### Java 主动编码
+
+- 独立使用 `HashMap` 完成“商品 ID → 累计购买数量”，输入 `{4,38,4,39,38}` 与 `{2,3,1,2,4}`，运行得到 `{4=3, 38=7, 39=2}`。
+- 独立遍历 `Map.Entry` 找出购买数量最多的商品 ID，理解 `entry.getKey()` 和 `entry.getValue()`。
+- 独立使用 `List<ProductItem>`、Getter、增强 for 循环筛选低库存商品，运行得到 `[机械键盘, 显示器]`。
+- 独立筛选累计购买数量大于等于阈值的商品 ID，修正 `>` 与 `>=` 的边界错误后运行得到 `[4, 38]`。
+- 使用 Lambda 和 `Integer.compare()` 对 `List<ProductItem>` 按库存升序、降序排序并验证成功。
+- 已能把一个方法返回的 `Map` 继续传给另一个方法，理解基础方法组合和数据流转。
+
+### 项目面试表达
+
+- 能脱离代码说明创建订单流程：前端只提交商品 ID 和数量，后端从认证信息取得当前用户，从数据库取得商品价格，计算总价、扣库存、记录出库并新增订单。
+- 能说明原子扣库存 SQL 把库存判断和扣减放在同一条 `UPDATE` 中，并根据 `affectedRows` 判断成功或失败。
+- 能说明取消订单通过 `status = 1` 条件更新和 `affectedRows == 1` 后才退库存，防止重复取消和重复退库存。
+- 一分钟项目介绍已补充订单业务、事务一致性和 Docker 的准确职责；需要继续避免把 JWT 说成注册校验、把多个容器说成一个镜像。
+
+### 错误定位与测试
+
+- 能识别普通 Java 堆栈中的异常类型，并知道优先查看第一条属于自己项目的文件与行号。
+- 能从 Spring 多层启动错误的最底层 `Caused by` 定位缺失环境变量。
+- 已理解编译信息中 `required` 是方法要求的参数，`found` 是实际传入的参数；数量不一致时同步修改调用位置。
+- 已理解 `List<Product>` 不能直接赋值给 `List<ProductVO>`，需要逐个完成 Entity 到 VO 的转换。
+- 在 `AuthServiceTest` 新增“用户不存在时登录失败”测试：Mapper 返回 `null` 时断言 401，并验证密码组件和 JWT 组件没有被调用；整个测试类运行成功。
+
+### 当前达标判断
+
+- **项目展示门槛：已达到。**
+- **开始投递门槛：已达到，应边学习边投递。**
+- **稳定技术面门槛：尚未达到。** 仍需提高 Java 独立组织代码、错误定位速度和项目表达稳定性。
+- **Spring Cloud/MQ 入门目标：已达到。** 当前属于“运行过并了解基本流程”，不是熟练掌握。
+
+### 当前下一步
+
+1. 保持每天 1～2 个 Java 主动编码输出，下一次优先练习集合、对象和方法组合，不继续堆框架术语。
+2. 使用现有项目继续练习测试阅读和安全的小型错误定位，不增加普通 CRUD。
+3. 复述一次 JWT、Redis 缓存更新和 Docker 部署链路，补齐一分钟项目介绍中的表达短板。
+4. 完成正式 PDF 简历，并沟通或投递不少于 3 个匹配的 Java 后端实习岗位，优先确认线上面试。
+5. 处理旧 `springboot-practice` 中硬编码的邮件授权凭据：先撤销或轮换，再改为环境变量；不得在聊天、文档或提交中保留真实值。
+
+## 2026-07-28 补充：Docker 排错与登录测试
+
+### Docker 部署与排错
+
+- 能区分 `Dockerfile` 与 `compose.yaml`：前者负责把 Spring Boot JAR 构建成应用镜像，后者负责统一配置和管理 app、MySQL、Redis 多个容器。
+- 能正确解释端口映射：Windows 上的 Navicat 使用 `localhost:3307` 访问容器 MySQL，app 容器使用 `mysql:3306`；Windows 使用 `localhost:6380` 访问 Redis，app 容器使用 `redis:6379`。
+- 已理解容器中的 `localhost` 只表示当前容器自己，容器之间通过 Compose 服务名访问。
+- 已理解 `environment` 用于把数据库地址、用户名、密码、JWT 密钥和端口等运行配置传入容器；`${DB_PASSWORD}`、`${JWT_SECRET}` 从外部环境读取，避免把敏感值提交到 Git。
+- 能说明修改 Java 源码后仅执行 `docker compose restart app` 仍会运行旧镜像中的旧 JAR；正确更新流程是先执行 `mvn package`，再执行 `docker compose up -d --build`。
+- 能根据现象选择排错命令：使用 `docker compose ps` 查看服务状态，使用 `docker compose logs app --tail 100` 查看应用启动失败原因。
+- 能识别 `port is already allocated` 表示宿主机端口被占用，并优先检查 IDEA 中是否仍运行着占用 8080 的 Spring Boot 进程。
+
+### AuthService 单元测试
+
+- 独立补充了“用户已禁用时登录失败”的 Mockito 单元测试：模拟用户存在、密码正确但 `status = 0`，断言抛出 403 和“用户已禁用”，并验证 JWT 未生成。
+- 已纠正测试数据表达：请求密码使用明文，数据库用户密码使用模拟密文，`passwordEncoder.matches(明文, 密文)` 返回 `true`。
+- 当前 `AuthServiceTest` 已覆盖登录成功、密码错误、用户不存在和用户禁用四条主要分支。
+- 能说明 Mockito 单元测试只验证模拟依赖条件下的 Service 业务逻辑，不能证明真实 SQL、MySQL 数据、Controller、Spring Security、HTTP 请求和真实 JWT 链路全部正确。
+- 能初步区分：Mockito 单元测试验证单个 Service 逻辑，Spring 集成测试验证多个组件协作，Postman 接口测试验证真实 HTTP 运行链路。
+
+### 本轮达标判断
+
+- **Docker 基础表达：达到实习入门要求。** 能解释镜像、容器、端口、服务名、环境变量、重新构建和常见启动排错；仍不表述为“熟练掌握 Docker”。
+- **测试基础：达到模板应用要求。** 能参考现有测试独立补充分支，并理解单元测试的证明范围；暂不要求脱离参考默写全部 Mockito API。
+- **下一次继续：** 优先进行 Java 集合、对象和方法组合的主动编码，再回到现有项目做一个安全的小型错误定位，不增加重复 CRUD。
+
+## 2026-07-29 学习记录
+
+### Java 主动编码
+
+- 独立编写 `createRestockPlan(List<ProductItem>, int)`：遍历商品对象列表，把库存低于目标值的商品转换为“商品名称 → 需要补充数量”的 `Map`。
+- 独立编写 `applyRestockPlan(List<ProductItem>, Map<String, Integer>)`：使用 `containsKey()` 和 `get()` 读取补货数量，并调用 `ProductItem.addStock()` 修改对象库存。
+- 运行结果正确：补货计划为 `{显示器=3, 机械键盘=2}`，执行计划后机械键盘和显示器库存均变为 5，苹果手机保持 10。
+- 已理解 `HashMap` 不保证输出顺序，键值对顺序不同不影响结果正确性。
+- 使用 IDEA `Shift + F6` 完成变量安全重命名，知道 Rename 重构会统一修改同一变量的引用。
+
+### 项目错误定位与测试
+
+- 发现并修正注册逻辑中的用户名处理不一致：查重时使用 `request.getUsername().trim()`，保存时也应使用处理后的 `username`，避免带空格用户名导致登录失败或绕过查重。
+- 修改后运行完整 Maven 测试：`Tests run: 9, Failures: 0, Errors: 0, Skipped: 0`，最终 `BUILD SUCCESS`。
+- 能说明该结果证明现有测试没有被破坏，但现有测试未专门覆盖用户名空格场景，因此不能把回归测试通过等同于该场景已被完整验证。
+
+### JWT、Redis 与项目表达
+
+- 能说明 JWT 请求主线：过滤器读取 `Authorization: Bearer ...`，校验签名、格式和有效期，解析用户名与角色，创建 `Authentication` 放入 `SecurityContext`，再由 Spring Security 完成认证和授权。
+- 已纠正“JWT 过滤器重新判断用户名和密码”的误解：当前过滤器验证的是 Token，没有重新查询数据库校验账号密码。
+- 能说明 Redis Cache-Aside 流程：首次查询未命中后查询 MySQL 并回填缓存，第二次查询直接命中 Redis；修改商品、库存或状态后删除缓存，下次查询重新加载最新数据。
+- 一分钟项目介绍已进一步修正：订单总价是单价乘数量，接口返回 `OrderVO` 而不是 URL；原子 SQL 使用 `stock >= quantity` 和 `status = 1`；Dockerfile 构建应用镜像，Compose 编排 app、MySQL、Redis 多个容器。
+
+### SQL 主动练习
+
+- 完成“按日期统计有效订单”查询，综合使用 `DATE()`、`COUNT()`、`SUM()`、`WHERE`、`GROUP BY` 和 `ORDER BY`。
+- 能区分 `COUNT(o.id)` 统计订单条数，`SUM(o.quantity)` 统计售出商品总件数，单个订单可以购买多件商品。
+- 已通过真实数据验证：2026-07-23 有 1 个有效订单、购买 2 件商品、总金额 2598.00。
+- 理解 `ONLY_FULL_GROUP_BY` 规则：`SELECT` 中未聚合的普通字段必须与 `GROUP BY` 的分组表达式一致；按 `DATE(create_time)` 分组时也应查询 `DATE(create_time)`，不能直接选择完整 `create_time`。
+
+### 当前判断与下一步
+
+- **今日技术输出已达标：** 完成 2 个 Java 方法、1 个真实项目 Bug 修正、9 个测试回归、JWT/Redis/Docker 复述和 1 条统计 SQL。
+- **项目展示和开始投递门槛继续保持达标；稳定技术面仍需训练。**
+- 下一次优先：独立完成 1 个包含空值或边界判断的 Java 方法；阅读 1 个现有 Service 测试并说明 Mock、执行、断言三部分；完成正式 PDF 简历并开始匹配岗位投递。

@@ -795,6 +795,15 @@ sysOrder.setId(product.getId());
 
 原则：新增状态字段时同步核对“数据库注释 → Entity 数值 → VO 状态文字 → 接口响应”，异常状态码也必须与错误类型一致。
 
+2026-07-27 复盘取消订单时，曾把订单的 `status = 1` 解释成“商品处于上架状态”。同一个数字在不同表中的含义可能完全不同：
+
+```text
+product.status = 1：商品上架
+sys_order.status = 1：订单已创建、尚未取消
+```
+
+解释条件前必须先确认当前操作的是哪张表、哪个 Entity，不能只根据数值猜业务含义。
+
 ### 49. 取消订单时遗漏用户判空和安全对象比较
 
 取消订单根据用户名查询用户后，最初没有判断 `user == null`，后续 `user.getId()` 存在空指针风险；订单归属最初使用 `order.getUserId().equals(user.getId())`，后改为：
@@ -850,6 +859,27 @@ getMyOrders(String username)
 - 同名类的完整包名。
 - 修改后运行 `mvn test`，以最后一次输出的 `BUILD SUCCESS` 为准。
 
+### 52. 混淆 Dockerfile、Compose 和端口所在位置
+
+复盘部署时曾把 Dockerfile 说成“引入 JAR 的使用方法”，并把 Compose 误认为 Java 的 Service、API 和数据层组合。
+
+正确职责是：
+
+```text
+Dockerfile：定义如何使用 JRE 和 JAR 构建、启动一个应用镜像
+compose.yaml：定义并组合 app、mysql、redis 等多个容器服务
+```
+
+端口映射：
+
+```text
+应用容器访问 MySQL：mysql:3306
+Windows Navicat 访问容器 MySQL：localhost:3307
+compose 中 3307:3306：宿主机端口映射到容器端口
+```
+
+`3306` 是 MySQL 的默认端口，不是绝对不能修改的固定值；`3307` 是当前项目选择的 Windows 宿主机端口。
+
 ## 七、当前阶段的防错清单
 
 写完 Service 后检查：
@@ -895,3 +925,166 @@ JWT / Security 检查：
 - 同一个错误再次出现时，在对应条目下记录日期和场景，不重复创建新条目。
 - 只记录真实发生过、值得下次优先检查的错误。
 - 已经连续多次独立避免的错误，可以标记为“基本掌握”，但暂不删除历史记录。
+
+### 53. 在 Git 仓库的父目录执行仓库命令
+
+**场景：**
+
+在下面的父目录执行：
+
+```powershell
+PS C:\Users\Whiscjdsb\Documents\SpringBoot> git remote set-url origin ...
+```
+
+出现：
+
+```text
+fatal: not a git repository (or any of the parent directories): .git
+```
+
+**原因：** 当前终端不在真正的项目仓库目录内。
+
+**改正：**
+
+```powershell
+cd C:\Users\Whiscjdsb\Documents\SpringBoot\inventory-order-system
+git remote set-url origin https://github.com/Whiscjdsb/inventory-order-system.git
+git remote -v
+```
+
+**规律：** 执行 `git status`、`git add`、`git commit`、`git remote` 前，先看终端提示符是否位于包含 `.git` 的项目目录。
+
+### 54. 项目文件夹改名会改变 Docker Compose 默认项目名
+
+**场景：** 项目文件夹从 `inventory-practice` 改为 `inventory-order-system`。Docker Compose 默认根据文件夹名生成网络和数据卷名称，如果直接重新启动，可能创建一套新的空 MySQL、Redis 数据卷，让人误以为原数据丢失。
+
+**处理：** 在 `compose.yaml` 顶层固定原项目名：
+
+```yaml
+name: inventory-practice
+
+services:
+```
+
+**规律：** `docker compose down` 默认保留数据卷；文件夹改名不会删除旧数据卷，但可能导致 Compose 不再自动使用它。先固定项目名，再执行 `docker compose up -d`。
+
+### 55. 修改 Git remote 不等于自动修改 GitHub 仓库名
+
+`git remote set-url` 只修改本地仓库保存的远程地址。GitHub 网站上的仓库必须先在仓库 `Settings` 中完成改名，再更新本地 remote，并通过下面的命令确认：
+
+```powershell
+git remote -v
+```
+
+### 56. 简历文件名和信息优先级不清晰
+
+**场景：** PDF 使用了 `新建简历 ad228c.pdf`，顶部展示出生年月，但没有直接展示求职方向。
+
+**改正：**
+
+- 文件名使用 `姓名-岗位-学校-毕业届别.pdf`。
+- 顶部优先展示姓名、求职方向、联系方式、学校和 GitHub。
+- 出生年月对 Java 后端能力帮助较小，可以删除。
+- 课程、技术和项目描述只能写真实学过、能够解释的内容。
+
+推荐文件名：
+
+```text
+万晖-Java后端开发实习-福建农林大学-2028届.pdf
+```
+
+### 57. 普通异常堆栈与 Spring 多层 `Caused by` 的定位方式混淆
+
+**场景：**
+
+看到下面的普通 Java 空指针堆栈时，最初认为应该从最下面的 `AuthController` 开始查看：
+
+```text
+NullPointerException: user is null
+at AuthService.login(AuthService.java:45)
+at AuthController.login(AuthController.java:31)
+```
+
+**正确判断：**
+
+- 普通 Java 异常先看异常类型和 message，再找第一条属于自己项目的文件与行号；本例应先打开 `AuthService.java:45`。
+- 后续的 `AuthController.java:31` 表示调用来源，不是空指针直接发生的位置。
+- Spring 启动失败存在多层包装异常时，先找最底层 `Caused by`，然后在对应堆栈中继续找自己的代码或具体配置。
+
+**规律：**
+
+```text
+普通运行异常：异常类型/message → 第一条自己的代码
+Spring启动异常：最底层Caused by → 具体配置或第一条自己的代码
+```
+
+### 58. 混淆 Spring、MyBatis、Nacos、Gateway 和 OpenFeign 的职责
+
+**场景：**
+
+- 把 `ProductService` 对象说成由 MyBatis 创建。
+- 把 Gateway、Nacos 和 OpenFeign 混成“Gateway 调用 OpenFeign 寻找服务地址”。
+
+**正确区分：**
+
+```text
+Spring：创建和管理Service等Bean，并通过构造方法完成依赖注入
+MyBatis：为Mapper接口生成数据库访问代理对象，再交给Spring管理
+Gateway：统一入口、认证过滤和路由转发
+Nacos：服务注册与发现，提供目标服务地址
+OpenFeign：根据接口定义发送服务间HTTP请求
+```
+
+**规律：** 解释框架调用链时，每个组件只说自己的直接职责，先画出请求顺序，再补充实现细节。
+
+### 59. Docker 项目介绍中混淆镜像与多容器编排
+
+**场景：**
+
+项目介绍时把 Docker 说成“将 Service、Redis 和 MySQL 层打包成一个镜像”。
+
+**正确表达：**
+
+```text
+Dockerfile：把Spring Boot JAR构建为应用镜像
+MySQL和Redis：分别使用自己的官方镜像
+Docker Compose：统一配置、启动和连接app、mysql、redis多个容器
+```
+
+**规律：** 镜像描述单个容器如何创建；Compose 描述多个容器如何组合运行。
+
+### 60. 按日期分组却选择完整时间导致 `ONLY_FULL_GROUP_BY` 报错
+
+**场景：**
+
+查询每天的订单统计时写成：
+
+```sql
+SELECT o.create_time
+FROM sys_order o
+GROUP BY DATE(o.create_time);
+```
+
+MySQL 返回：
+
+```text
+Expression #1 of SELECT list is not in GROUP BY clause
+```
+
+**原因：** `GROUP BY DATE(o.create_time)` 把同一天的多条记录分为一组，但 `SELECT o.create_time` 要求显示包含时分秒的某个具体时间。组内可能存在多个不同时间，MySQL 无法确定应该返回哪一个。
+
+**正确写法：**
+
+```sql
+SELECT
+    DATE(o.create_time) AS order_date,
+    COUNT(o.id) AS order_count,
+    SUM(o.quantity) AS total_quantity,
+    SUM(o.total_price) AS total_amount
+FROM sys_order o
+WHERE o.status = 1
+GROUP BY DATE(o.create_time)
+ORDER BY order_date DESC;
+```
+
+**规律：** `SELECT` 中没有经过聚合函数处理的字段或表达式，应与 `GROUP BY` 的分组内容保持一致。SQL 代码继续使用英文逗号和英文标点，避免中文逗号造成语法错误。
