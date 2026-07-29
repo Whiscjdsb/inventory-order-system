@@ -1,3 +1,5 @@
+name: inventory-practice
+
 services:
   mysql:
     image: mysql:8.4
