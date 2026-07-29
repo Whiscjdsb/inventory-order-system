@@ -93,5 +93,56 @@ class AuthServiceTest {
 
         verify(jwtTokenProvider, never()).generateToken(any());
     }
+    @Test
+    void shouldThrowWhenUserDoesNotExist() {
+        LoginRequest request = new LoginRequest();
+        request.setUsername("not_exist");
+        request.setPassword("Backend123");
+
+        when(sysUserMapper.selectOne(any()))
+                .thenReturn(null);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> authService.login(request)
+        );
+
+        assertEquals(401, exception.getCode());
+        assertEquals(
+                "用户名或密码错误",
+                exception.getMessage()
+        );
+
+        verifyNoInteractions(
+                passwordEncoder,
+                jwtTokenProvider
+        );
+    }
+    @Test
+    void shouldThrowWhenUserIsDisabled() {
+        LoginRequest request = new LoginRequest();
+        request.setUsername("disabled_user");
+        request.setPassword("Backend123");
+
+        SysUser user = new SysUser();
+        user.setUsername("disabled_user");
+        user.setPassword("encoded-password");
+        user.setStatus(0);
+
+        when(sysUserMapper.selectOne(any()))
+                .thenReturn(user);
+
+        when(passwordEncoder.matches("Backend123","encoded-password"))
+                .thenReturn(true);
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> authService.login( request)
+        );
+
+        assertEquals(403, exception.getCode());
+        assertEquals("用户已禁用", exception.getMessage());
+
+        verify(jwtTokenProvider, never()).generateToken(any());
+    }
 
 }

@@ -36,7 +36,7 @@ public class AuthService {
         throw new BusinessException(400,"用户名已存在");
     }
     SysUser user = new SysUser();
-    user.setUsername(request.getUsername());
+    user.setUsername(username);
     user.setPassword(passwordEncoder.encode(request.getPassword()));
     user.setRole("USER");
     user.setStatus(1);
