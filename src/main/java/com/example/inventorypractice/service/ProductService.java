@@ -116,6 +116,13 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
     @Transactional
     @CacheEvict(cacheNames = "productById", key = "#productId")
     public void deductStock(Long productId, Integer quantity) {
+        if (productId == null || productId < 1){
+            throw new BusinessException(400, "商品ID必须大于等于1");
+        }
+        if (quantity == null || quantity < 1){
+            throw new BusinessException(400, "商品数量必须大于等于1");
+        }
+
         int affectedRows = productMapper.deductStock(productId, quantity);
         if (affectedRows == 0) {
             Product product = productMapper.selectById(productId);

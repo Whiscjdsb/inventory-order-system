@@ -55,6 +55,7 @@ class ProductServiceTest {
         assertEquals(0, result.get(0).getStock());
         assertEquals("上架", result.get(0).getStatusText());
     }
+
     @Test
     void shouldThrowWhenStockIsInsufficient() {
         Product product = new Product();
@@ -78,6 +79,22 @@ class ProductServiceTest {
 
         verifyNoInteractions(stockOperationService);
     }
+
+    @Test
+    void shouldRejectNegativeDeductQuantity() {
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> productService.deductStock(4L, -1)
+        );
+        assertEquals(400, exception.getCode());
+        assertEquals("商品数量必须大于等于1", exception.getMessage());
+        verifyNoInteractions(
+                stockOperationService,
+                productMapper,
+                stockOperationMapper
+                );
+        }
+
 
     @Test
     void shouldCalculateOnSaleStockValue() {
