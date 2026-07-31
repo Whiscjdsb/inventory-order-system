@@ -1,6 +1,6 @@
 # Java 与算法刷题复盘
 
-更新时间：2026-07-29
+更新时间：2026-07-30
 
 用途：单独记录 Java/力扣刷题中真实遇到的问题，包括题意理解、解题思路、Java 语法、数据结构选择、边界条件和复杂度分析。Spring Boot、MySQL、Redis、Docker、Git 等项目问题继续记录在 `LEARNING_ERRORS.md`。
 
@@ -350,3 +350,55 @@ Integer.compare(product2库存, product1库存) = 降序
 ```
 
 当前掌握程度：已经能从方法签名独立组织 `List + 对象 + Map + 方法调用` 的完整小功能，不再只是逐行填空。
+
+### Java 基础：返回最低库存对象与 null 边界
+
+日期：2026-07-30
+
+练习要求：从 `List<ProductItem>` 中返回库存最低的完整商品对象，同时安全处理 `null` 列表、空列表、列表中的 `null` 元素以及全部元素为 `null`。
+
+最初问题：
+
+- 方法返回类型为 `ProductItem`，却使用 `int lowestStock` 保存结果并尝试返回，混淆了“最低库存数字”和“具有最低库存的商品对象”。
+- 使用 `999999999` 作为初始最小值比较基准，属于不安全的魔法数字。
+- 第一次修改后仍未跳过 `null` 元素，执行 `product.getStock()` 会出现 `NullPointerException`。
+
+正确思路：
+
+```text
+列表为null或空 → 返回null
+lowest初始为null
+遍历商品 → 当前元素为null则continue
+lowest为null或当前库存更少 → lowest指向当前商品
+循环结束 → 返回lowest
+```
+
+关键 Java 知识：
+
+- 返回类型是 `ProductItem`，就需要保存并返回对象引用；调用者随后可以取得名称、库存等多个字段。
+- `continue` 结束当前这一轮循环，直接处理下一个元素。
+- `lowest == null || ...` 使用短路判断，第一次找到非空商品时不会调用 `lowest.getStock()`。
+- `List.of()` 不允许 `null`；需要构造包含 `null` 的测试列表时可使用 `Arrays.asList()`。
+
+运行结果：
+
+```text
+显示器：2
+null
+```
+
+当前掌握程度：能够在提示后修正返回类型和空值边界；下次遇到“返回对象还是返回字段”时，需要先核对方法签名再选择临时变量类型。
+
+### Java 基础：HashSet 中自定义对象的相等规则
+
+日期：2026-07-30
+
+本次理解：
+
+- 两个字段内容相同但分别通过 `new` 创建的 `ProductItem`，在没有重写 `equals()` 和 `hashCode()` 时仍是两个不同对象，加入 `HashSet` 后大小为 2。
+- `HashSet` 先利用 `hashCode()` 进行哈希定位，再使用 `equals()` 判断对象是否相等。
+- `String`、`Integer` 等标准类型已经提供内容相等规则，自定义类需要根据业务身份决定是否重写。
+- 相等对象必须返回相同的 hashCode。
+- 不应轻易把会变化的 `stock` 作为哈希身份字段；对象加入 `HashSet` 后修改参与 hashCode 的字段，可能导致集合无法正常查找该对象。
+
+下一步练习：在独立 `ProductItem` 练习类中，根据明确业务规则生成 `equals()` 和 `hashCode()`，验证第二次添加相同身份商品时 `HashSet.add()` 返回 `false`。

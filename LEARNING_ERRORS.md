@@ -1088,3 +1088,43 @@ ORDER BY order_date DESC;
 ```
 
 **规律：** `SELECT` 中没有经过聚合函数处理的字段或表达式，应与 `GROUP BY` 的分组内容保持一致。SQL 代码继续使用英文逗号和英文标点，避免中文逗号造成语法错误。
+
+### 61. 扣库存 Service 只依赖 DTO 校验，负数可能让 SQL 反向增加库存
+
+**场景：**
+
+`DeductStockRequest` 虽然使用 `@Positive`，但 `ProductService.deductStock()` 最初没有再次校验 `productId` 和 `quantity`，直接调用：
+
+```sql
+SET stock = stock - #{quantity}
+WHERE stock >= #{quantity}
+```
+
+如果未来有其他 Service、定时任务或测试绕过 Controller，错误传入 `quantity = -2`，SQL 的计算会变成：
+
+```text
+stock - (-2) = stock + 2
+```
+
+并且 `stock >= -2` 通常成立，可能把“扣库存”变成“加库存”。
+
+**修正：**
+
+在 Mapper 调用前校验：
+
+```java
+if (productId == null || productId < 1) {
+    throw new BusinessException(400, "商品ID必须大于等于1");
+}
+if (quantity == null || quantity < 1) {
+    throw new BusinessException(400, "商品数量必须大于等于1");
+}
+```
+
+新增单元测试传入负数，并使用 `verifyNoInteractions` 确认 Mapper 和库存记录组件均未执行；完整测试通过。
+
+**规律：**
+
+- DTO 校验保护 HTTP 请求入口，Service 校验保护核心业务边界，两者职责不同。
+- 对会直接参与加减乘除或 SQL 更新条件的数量，必须在最接近业务操作的位置再次验证范围。
+- 单元测试用于证明校验有效；真正阻止非法 SQL 的是 Service 中的判断，不是测试本身。

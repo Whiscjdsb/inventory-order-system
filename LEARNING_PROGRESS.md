@@ -1,6 +1,6 @@
 # inventory-order-system 学习进度
 
-更新时间：2026-07-29（完成 Java 主动编码、项目排错复盘、JWT/Redis 表达和 SQL 日统计）
+更新时间：2026-07-30（完成 Java 空值边界、Spring IoC/DI、事务与统一异常处理复盘）
 
 ## 当前技术栈
 
@@ -690,3 +690,63 @@ ProductVO productVO = new ...;      // 里面的单个对象——冲突！
 - **今日技术输出已达标：** 完成 2 个 Java 方法、1 个真实项目 Bug 修正、9 个测试回归、JWT/Redis/Docker 复述和 1 条统计 SQL。
 - **项目展示和开始投递门槛继续保持达标；稳定技术面仍需训练。**
 - 下一次优先：独立完成 1 个包含空值或边界判断的 Java 方法；阅读 1 个现有 Service 测试并说明 Mock、执行、断言三部分；完成正式 PDF 简历并开始匹配岗位投递。
+
+## 2026-07-30 学习记录
+
+### Java 对象返回与空值边界
+
+- 编写 `findLowestStockProduct(List<ProductItem>)`，能够处理列表本身为 `null`、空列表、列表中存在 `null` 元素和全部元素为 `null` 的情况。
+- 最初使用 `int lowestStock` 保存最小库存，但方法返回类型是 `ProductItem`；已改为使用 `ProductItem lowest` 保存并返回完整商品对象。
+- 已使用 `continue` 跳过列表中的 `null` 元素，避免调用 `product.getStock()` 时出现空指针异常。
+- 已理解不应使用 `999999999` 作为人为最大值；通过 `lowest == null` 让第一个非空商品成为初始候选更安全。
+- 使用 `Arrays.asList()` 构造包含 `null` 的测试列表；知道 `List.of()` 不允许包含 `null`。
+- 运行验证成功：正常列表返回“显示器：2”，全部为 `null` 的列表返回 `null`。
+
+### Spring IoC、DI 与 Bean
+
+- 能说明 IoC（Inversion of Control，控制反转）：把对象创建、依赖组装和生命周期管理交给 Spring 容器。
+- 能说明 DI（Dependency Injection，依赖注入）：Spring 通过构造方法把对象需要的依赖传进去，是实现 IoC 的方式之一。
+- 能结合项目说明：Spring 创建 `AuthService`，并注入 `SysUserMapper`、`PasswordEncoder` 和 `JwtTokenProvider`。
+- 已纠正职责混淆：MyBatis 负责生成 Mapper 代理对象，最终由 Spring 管理并注入 Service。
+- 已理解 `@Service`、`@Component`、`@Mapper`、`@Configuration` 和 `@Bean` 在当前项目中注册 Bean 的不同方式。
+- 能说明通过 `@Bean` 提供 `PasswordEncoder` 的好处：统一交给 Spring 管理、面向接口依赖，并方便 Mockito 注入 Mock 实现。
+- 能从 Spring 启动错误中定位：`AuthService` 缺少 `PasswordEncoder` 时，应检查 `PasswordConfig`、`@Configuration` 和 `@Bean`。
+
+### AOP、事务和测试边界
+
+- 已了解 AOP（Aspect-Oriented Programming，面向切面编程）适合日志、耗时、事务、缓存等横切逻辑，不应把订单创建、库存扣减等核心业务隐藏在自定义切面中。
+- 知道当前主项目没有自定义 `Aspect`，这不影响项目完整性；`@Transactional`、`@Cacheable` 和 `@CacheEvict` 的底层行为与 Spring 代理/AOP 机制有关。
+- 能说明订单事务边界：`createOrder()` 的事务覆盖扣库存、库存记录和订单插入；默认 `REQUIRED` 传播下，`deductStock()` 会加入外层事务。
+- 能分析缺少外层事务的后果：扣库存事务先提交后，订单保存失败无法回滚已提交库存，造成“库存减少但订单不存在”的数据不一致。
+- 能区分 Mockito 单元测试不能证明真实数据库回滚；验证 SQL 和事务需要 Spring 集成测试、测试 MySQL/Testcontainers，或通过 Postman 与数据库人工验证。
+
+### 扣库存安全修复
+
+- 代码审查发现 `deductStock()` 只依赖 Controller DTO 校验，Service 本身未拦截非法 `productId` 和 `quantity`。
+- 已在 `ProductService.deductStock()` 的 Mapper 调用前增加 ID 和数量非空、必须大于等于 1 的校验，防止负数进入 `stock = stock - quantity` 后反向增加库存。
+- 新增 `shouldRejectNegativeDeductQuantity()` 单元测试：传入 `-1` 时断言 400 和错误消息，并通过 `verifyNoInteractions` 确认 Mapper 与库存记录服务均未调用。
+- `ProductServiceTest` 和完整测试运行成功，项目测试总数增加到 10。
+- 已完成独立 Git 提交，提交主题为“增加扣库存参数校验”。
+- 能说明 Service 仍需校验的原因：Service 可能被其他 Service、定时任务、测试或未来入口直接调用，不能只依赖某个 Controller 的 `@Valid`。
+
+### 统一异常处理
+
+- 已结合真实代码理解 `BusinessException → GlobalExceptionHandler → ResponseEntity<ApiResponse<Void>>` 的处理链路。
+- 能区分 `BusinessException` 是异常类型，`message` 是错误说明，`code` 是错误码，错误响应的 `data` 为 `null`。
+- 知道 `@RestControllerAdvice` 提供全局 Controller 异常处理，`@ExceptionHandler` 按异常类型选择处理方法。
+- 能区分真实 HTTP 状态码和 JSON 中的 `code`；`ResponseEntity` 控制 HTTP 状态，`ApiResponse` 统一 Body 结构。
+- 了解当前处理器明确处理业务异常和参数校验异常；未匹配异常通常按 500 处理，生产项目可增加记录日志的通用兜底，但暂未要求立即实现。
+
+### HashSet 自定义对象去重入门
+
+- 已判断两个字段相同但分别 `new` 出来的 `ProductItem` 在未重写 `equals()`、`hashCode()` 时会同时进入 `HashSet`，集合大小为 2。
+- 初步理解 `hashCode()` 用于哈希定位，`equals()` 用于判断业务相等；相等对象必须具有相同的 hashCode。
+- 知道 IDEA 可通过 `Alt + Insert → equals() and hashCode()` 生成方法；可变库存不适合作为哈希身份字段，避免对象修改后集合定位异常。
+
+### 当前达标判断与新对话下一步
+
+- **项目展示门槛：已达到。**
+- **开始投递门槛：已达到。** 用户当前明确暂不投递，后续由用户主动通知开始投递，不再反复催促。
+- **稳定技术面门槛：尚未达到。** IoC/DI、事务、异常处理已经能理解和表达，仍需通过主动编码和真实排错提高稳定性。
+- 新对话先读取 `AGENTS.md`、`LEARNING_PROGRESS.md`、`LEARNING_ERRORS.md` 和 `JAVA_ALGORITHM_ERRORS.md`。
+- 下一步优先完成 `equals()`/`hashCode()` 的一个小型对象去重实验，然后回到现有项目做一次不增加 CRUD 的代码阅读或错误定位。
