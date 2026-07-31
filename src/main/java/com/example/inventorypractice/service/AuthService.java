@@ -8,6 +8,7 @@ import com.example.inventorypractice.exception.BusinessException;
 import com.example.inventorypractice.mapper.SysUserMapper;
 import com.example.inventorypractice.security.JwtTokenProvider;
 import com.example.inventorypractice.vo.LoginVO;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -42,7 +43,11 @@ public class AuthService {
     user.setStatus(1);
     user.setCreateTime(LocalDateTime.now());
     user.setUpdateTime(LocalDateTime.now());
-    sysUserMapper.insert(user);
+        try {
+            sysUserMapper.insert(user);
+        } catch (DuplicateKeyException exception) {
+            throw new BusinessException(400, "用户名已存在");
+        }
     }
 
     public LoginVO login(LoginRequest request) {
