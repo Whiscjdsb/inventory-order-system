@@ -107,4 +107,27 @@ class ProductServiceTest {
 
         assertEquals(new BigDecimal("81.00"), result);
     }
+    @Test
+    void shouldRejectInvalidPriceRange() {
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> productService.getProductListByNameAndPrice(
+                        "测试商品",
+                        new BigDecimal("1000.00"),
+                        new BigDecimal("100.00")
+                )
+        );
+
+        assertEquals(400, exception.getCode());
+        assertEquals(
+                "最小价格不能大于最大价格",
+                exception.getMessage()
+        );
+
+        verifyNoInteractions(
+                productMapper,
+                stockOperationService,
+                stockOperationMapper
+        );
+    }
 }

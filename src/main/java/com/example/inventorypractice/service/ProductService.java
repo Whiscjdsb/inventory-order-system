@@ -225,6 +225,14 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
         if (maxPrice != null && maxPrice.compareTo(BigDecimal.ZERO) < 0) {
             throw new BusinessException(400, "最大价格必须大于等于0");
         }
+        if (minPrice != null
+                && maxPrice != null
+                && minPrice.compareTo(maxPrice) > 0) {
+            throw new BusinessException(
+                    400,
+                    "最小价格不能大于最大价格"
+            );
+        }
 
         LambdaQueryWrapper<Product> queryWrapper = new LambdaQueryWrapper<>();
         if (name != null && !name.isBlank()) {
