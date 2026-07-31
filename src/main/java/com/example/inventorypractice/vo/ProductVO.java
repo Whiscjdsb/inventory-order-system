@@ -1,6 +1,7 @@
 package com.example.inventorypractice.vo;
 
 import com.example.inventorypractice.entity.Product;
+import com.example.inventorypractice.enums.ProductStatus;
 import lombok.Data;
 
 import java.io.Serializable;
@@ -26,7 +27,8 @@ public class ProductVO  implements Serializable {
         productVO.setPrice(product.getPrice());
         productVO.setStock(product.getStock());
         productVO.setStatus(product.getStatus());
-        productVO.setStatusText(product.getStatus() == 1 ? "上架" : "下架");
+        productVO.setStatusText(
+                ProductStatus.getText(product.getStatus()));
         productVO.setCreateTime(product.getCreateTime());
         productVO.setUpdateTime(product.getUpdateTime());
         return productVO;
