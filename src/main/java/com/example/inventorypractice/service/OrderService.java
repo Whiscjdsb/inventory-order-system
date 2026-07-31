@@ -6,6 +6,7 @@ import com.example.inventorypractice.dto.CreateOrderRequest;
 import com.example.inventorypractice.entity.Product;
 import com.example.inventorypractice.entity.SysOrder;
 import com.example.inventorypractice.entity.SysUser;
+import com.example.inventorypractice.enums.OrderStatus;
 import com.example.inventorypractice.exception.BusinessException;
 import com.example.inventorypractice.mapper.ProductMapper;
 import com.example.inventorypractice.mapper.SysOrderMapper;
@@ -59,7 +60,9 @@ public class OrderService {
         sysOrder.setQuantity(request.getQuantity());
         sysOrder.setUnitPrice(unitPrice);
         sysOrder.setTotalPrice(totalPrice);
-        sysOrder.setStatus(1);
+        sysOrder.setStatus(
+                OrderStatus.CREATED.getCode()
+        );
         LocalDateTime now = LocalDateTime.now();
         sysOrder.setCreateTime(now);
         sysOrder.setUpdateTime(now);
@@ -124,7 +127,10 @@ public class OrderService {
             throw new BusinessException(404, "订单不存在");
         }
 //        5. 判断订单是否已经取消
-        if (order.getStatus() == 2) {
+        if (Objects.equals(
+                order.getStatus(),
+                OrderStatus.CANCELLED.getCode()
+        )) {
             throw new BusinessException(400, "订单已经取消");
         }
 //        6. 执行原子取消SQL

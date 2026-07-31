@@ -1,6 +1,7 @@
 package com.example.inventorypractice.vo;
 
 import com.example.inventorypractice.entity.SysOrder;
+import com.example.inventorypractice.enums.OrderStatus;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -29,7 +30,9 @@ public class OrderVO {
         orderVO.setUnitPrice(order.getUnitPrice());
         orderVO.setTotalPrice(order.getTotalPrice());
         orderVO.setStatus(order.getStatus());
-        orderVO.setStatusText(order.getStatus() == 1 ? "已创建" : "已取消");
+        orderVO.setStatusText(
+                OrderStatus.getText(order.getStatus())
+        );
         orderVO.setCreateTime(order.getCreateTime());
         orderVO.setUpdateTime(order.getUpdateTime());
         return orderVO;
