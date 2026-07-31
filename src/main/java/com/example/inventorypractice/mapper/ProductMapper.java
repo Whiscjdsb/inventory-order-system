@@ -2,6 +2,7 @@ package com.example.inventorypractice.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.example.inventorypractice.entity.Product;
+import com.example.inventorypractice.vo.InventoryOverviewVO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -45,4 +46,26 @@ public interface ProductMapper extends BaseMapper<Product> {
       AND is_deleted = 0
     """)
     BigDecimal calculateOnSaleStockValue();
+
+    @Select("""
+        SELECT
+            COUNT(*) AS total_products,
+            COUNT(CASE WHEN status = 1 THEN 1 END)
+                AS on_sale_products,
+            COUNT(CASE WHEN status = 1 AND stock = 0 THEN 1 END)
+                AS out_of_stock_products,
+            COALESCE(
+                SUM(
+                    CASE
+                        WHEN status = 1 THEN price * stock
+                        ELSE 0
+                    END
+                ),
+                0
+            ) AS on_sale_stock_value
+        FROM product
+        WHERE is_deleted = 0
+        """)
+    InventoryOverviewVO selectInventoryOverview();
+
 }

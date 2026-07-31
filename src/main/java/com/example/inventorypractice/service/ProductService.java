@@ -362,17 +362,7 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
     public BigDecimal calculateOnSaleStockValue(){
         return productMapper.calculateOnSaleStockValue();
     }
-
     public InventoryOverviewVO getInventoryOverview() {
-        InventoryOverviewVO overview = new InventoryOverviewVO();
-        overview.setTotalProducts(countProducts());
-        overview.setOnSaleProducts(countOnSaleProducts());
-        LambdaQueryWrapper<Product> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(Product::getStatus ,1);
-        queryWrapper.eq(Product::getStock, 0);
-        Long outOfStockProducts = productMapper.selectCount(queryWrapper);
-        overview.setOutOfStockProducts(outOfStockProducts);
-        overview.setOnSaleStockValue(calculateOnSaleStockValue());
-        return overview;
+        return productMapper.selectInventoryOverview();
     }
     }
