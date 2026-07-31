@@ -13,6 +13,7 @@ import com.example.inventorypractice.mapper.SysUserMapper;
 import com.example.inventorypractice.vo.OrderVO;
 import com.example.inventorypractice.vo.PageResult;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +22,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
 
+@Slf4j
 @Service
 public class OrderService {
     private final SysOrderMapper sysOrderMapper;
@@ -63,6 +65,14 @@ public class OrderService {
         sysOrder.setUpdateTime(now);
 
         sysOrderMapper.insert(sysOrder);
+
+        log.info(
+                "订单创建成功，orderId={}, userId={}, productId={}, quantity={}",
+                sysOrder.getId(),
+                user.getId(),
+                product.getId(),
+                request.getQuantity()
+        );
 
         return OrderVO.fromEntity(sysOrder);
 
