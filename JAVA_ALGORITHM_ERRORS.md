@@ -402,3 +402,23 @@ null
 - 不应轻易把会变化的 `stock` 作为哈希身份字段；对象加入 `HashSet` 后修改参与 hashCode 的字段，可能导致集合无法正常查找该对象。
 
 下一步练习：在独立 `ProductItem` 练习类中，根据明确业务规则生成 `equals()` 和 `hashCode()`，验证第二次添加相同身份商品时 `HashSet.add()` 返回 `false`。
+
+### Java 基础：两级排序、包装类型与金额比较
+
+日期：2026-07-31
+
+本次学习内容：
+
+- 使用 Comparator 对商品先按库存升序排序，库存相同时再按商品名称排序。
+- 比较器返回负数表示第一个对象排在前面，返回正数表示第二个对象排在前面，返回 0 表示当前比较条件相同。
+- `Integer.compare(product1.getStock(), product2.getStock())` 表示按库存升序比较。
+- 第一层库存比较结果不为 0 时直接返回；只有库存相同时，才执行 `product1.getName().compareTo(product2.getName())`。
+- `Long`、`Integer`、`BigDecimal` 都是对象类型；业务 ID 比较不能依赖 `==`，金额大小不能依赖普通算术运算。
+- `BigDecimal.compareTo(BigDecimal.ZERO) < 0` 表示当前金额小于 0。
+- `final` 限制引用变量重新赋值，不代表引用对象的内容完全不可修改。
+
+当前掌握程度：
+
+- 能在具体数据示例下理解两级排序过程，但暂时不能要求脱离模板独立写出完整 Comparator。
+- 能读懂常见 `compareTo()` 大小判断，并能在提示下写金额范围校验。
+- 后续优先在真实业务中继续使用这些写法，不单独反复背诵语法。

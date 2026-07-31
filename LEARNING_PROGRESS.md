@@ -750,3 +750,40 @@ ProductVO productVO = new ...;      // 里面的单个对象——冲突！
 - **稳定技术面门槛：尚未达到。** IoC/DI、事务、异常处理已经能理解和表达，仍需通过主动编码和真实排错提高稳定性。
 - 新对话先读取 `AGENTS.md`、`LEARNING_PROGRESS.md`、`LEARNING_ERRORS.md` 和 `JAVA_ALGORITHM_ERRORS.md`。
 - 下一步优先完成 `equals()`/`hashCode()` 的一个小型对象去重实验，然后回到现有项目做一次不增加 CRUD 的代码阅读或错误定位。
+
+## 2026-07-31 学习记录
+
+### 商品价格区间校验与单元测试
+
+- 在 `ProductService.getProductListByNameAndPrice()` 中增加价格区间校验：当最小价格和最大价格都不为空，并且最小价格大于最大价格时，抛出 400 业务异常。
+- 正确使用 `BigDecimal.compareTo()` 比较金额，理解 `minPrice.compareTo(maxPrice) > 0` 表示最小价格大于最大价格。
+- 新增 `shouldRejectInvalidPriceRange()` 单元测试，使用最小价格 `1000.00`、最大价格 `100.00` 触发异常，断言错误码和错误消息。
+- 使用 `verifyNoInteractions()` 验证参数不合法时不会继续调用 Mapper 或库存相关组件。
+- `ProductServiceTest` 通过，项目完整测试总数增加到 11；已提交“增加商品价格范围校验”。
+
+### Java 比较、排序与参数校验
+
+- 理解 `Long` 是包装类型：`==` 可能比较对象引用，业务 ID 推荐使用 `.equals()`；允许空值时可使用 `Objects.equals()`。
+- 理解 `BigDecimal.equals()` 会比较数值和小数位，`compareTo()` 主要比较数值大小；金额大小判断优先使用 `compareTo()`。
+- 完成商品两级排序：先按库存升序；库存相同时，再按名称字典顺序排序。
+- 已理解比较器返回负数、零、正数分别表示第一个元素排前、两者当前条件相同、第一个元素排后；复杂 Comparator 目前仍需要模板提示。
+- 理解 `Integer` 可表示 `null`，适合 DTO 配合 `@NotNull`；`int` 是基本类型，未赋值时默认为 0，无法区分“未传”和“传了 0”。
+- 理解 `@NotBlank` 可以拦截 `null`、空字符串和纯空格；`@NotNull` 只限制不能为空，具体范围还需要 `@Positive` 等注解。
+- 理解 `final` 修饰引用变量后不能让变量重新指向其他对象，但仍可修改该对象内部允许变化的内容。
+
+### Maven 与 IDEA Debug
+
+- 阅读真实 `pom.xml`，知道 POM 是 Project Object Model（项目对象模型），用于描述项目、依赖和构建配置。
+- 能区分 Maven Dependency（依赖）与 Plugin（插件）：`spring-boot-starter-test` 为测试提供 JUnit、Mockito 等依赖；`spring-boot-maven-plugin` 参与 Spring Boot 打包。
+- 初步理解 Maven Scope（依赖作用域）中的 `compile`、`runtime` 和 `test`，以及 `mvn test`、`mvn package`、`mvn clean package` 的用途。
+- 开始使用 IDEA Debug（调试）：已在价格区间判断处设置 Breakpoint（断点），通过 Debug 运行测试并观察 `minPrice`、`maxPrice`。
+- 已接触 `F8` Step Over（单步跳过），用于执行当前行但不进入该行调用的方法内部；本次 Debug 流程尚未完整练完，暂不算独立掌握。
+
+### MySQL 掌握边界与当前判断
+
+- MySQL 基础不是当前新手内容：已经学习过 JOIN、GROUP BY、HAVING、子查询、聚合、索引、EXPLAIN、事务、锁和 `FOR UPDATE`。
+- 后续 MySQL 不再重复 `KEY` 等基础定义，优先结合真实项目练习 SQL、执行计划和索引优化。
+- **项目展示门槛：已达到。**
+- **开始投递门槛：已达到，但按当前决定暂不投递。**
+- **稳定技术面门槛：尚未达到。** 当前主要短板是脱离提示组织代码、读懂较复杂 Java 表达式和独立排错。
+- 下一步：完成一次完整 Debug 流程，观察异常抛出和测试通过；随后做一次真实项目错误定位，不继续增加低价值 CRUD。
