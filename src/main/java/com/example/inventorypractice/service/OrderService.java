@@ -40,6 +40,13 @@ public class OrderService {
 
     @Transactional
     public OrderVO createOrder(String username, CreateOrderRequest request) {
+        if (request.getQuantity() == null || request.getQuantity() < 1){
+            throw new BusinessException(400, "购买数量必须大于等于1");
+        }
+        if (request.getProductId() == null || request.getProductId() < 1){
+            throw new BusinessException(400,"商品ID必须大于等于1");
+        }
+
         SysUser user = getUserByUsername(username);
         Product product = productMapper.selectById(request.getProductId());
 
