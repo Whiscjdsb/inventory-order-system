@@ -10,15 +10,17 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class ProductServiceTest {
@@ -32,8 +34,14 @@ class ProductServiceTest {
     @Mock
     private StockOperationMapper stockOperationMapper;
 
+    @Mock
+    private StringRedisTemplate stringRedisTemplate;
+
     @InjectMocks
     private ProductService productService;
+
+    @Mock
+    private ValueOperations<String, String> valueOperations;
 
     @Test
     void shouldReturnOutOfStockProducts() {
@@ -128,6 +136,55 @@ class ProductServiceTest {
                 productMapper,
                 stockOperationService,
                 stockOperationMapper
+        );
+    }
+    @Test
+    void shouldNotQueryDatabaseWhenMissingMarkerExists() {
+        Long productId = 999999L;
+        String missingKey = "product:not-found:" + productId;
+
+        when(stringRedisTemplate.hasKey(missingKey))
+                .thenReturn(true);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> productService.getProductById(productId)
+        );
+
+        assertEquals(404, exception.getCode());
+        assertEquals("商品不存在", exception.getMessage());
+
+        verifyNoInteractions(productMapper);
+    }
+    @Test
+    void shouldCacheMissingMarkerWhenProductDoesNotExist() {
+        Long productId = 999999L;
+        String missingKey = "product:not-found:" + productId;
+
+        when(stringRedisTemplate.hasKey(missingKey))
+                .thenReturn(false);
+
+        when(productMapper.selectById(productId))
+                .thenReturn(null);
+
+        when(stringRedisTemplate.opsForValue())
+                .thenReturn(valueOperations);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> productService.getProductById(productId)
+        );
+
+        assertEquals(404, exception.getCode());
+        assertEquals("商品不存在", exception.getMessage());
+
+        verify(productMapper).selectById(productId);
+
+        verify(valueOperations).set(
+                missingKey,
+                "1",
+                5,
+                TimeUnit.MINUTES
         );
     }
 }

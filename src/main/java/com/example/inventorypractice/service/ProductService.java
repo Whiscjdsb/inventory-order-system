@@ -19,6 +19,7 @@ import com.example.inventorypractice.vo.ProductVO;
 import com.example.inventorypractice.vo.StockOperationVO;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,17 +29,36 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class ProductService extends ServiceImpl <ProductMapper, Product>{
     private final ProductMapper productMapper;
     private final StockOperationService stockOperationService;
     private final StockOperationMapper stockOperationMapper;
-    public ProductService(ProductMapper productMapper, StockOperationService stockOperationService, StockOperationMapper stockOperationMapper) {
+    private static final String MISSING_PRODUCT_KEY_PREFIX =
+            "product:not-found:";
+
+    private final StringRedisTemplate stringRedisTemplate;
+
+
+    public ProductService(
+            ProductMapper productMapper,
+            StockOperationService stockOperationService,
+            StockOperationMapper stockOperationMapper,
+            StringRedisTemplate stringRedisTemplate
+    ) {
         this.productMapper = productMapper;
         this.stockOperationService = stockOperationService;
         this.stockOperationMapper = stockOperationMapper;
+        this.stringRedisTemplate = stringRedisTemplate;
     }
+    private void clearMissingProductMarker(Long id) {
+        stringRedisTemplate.delete(
+                MISSING_PRODUCT_KEY_PREFIX + id
+        );
+    }
+
 
     public ProductVO createProduct(CreateProductRequest request){
         Product product = new Product();
@@ -50,14 +70,33 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
         product.setCreateTime(now);
         product.setUpdateTime(now);
         productMapper.insert(product);
+        clearMissingProductMarker(product.getId());
         return ProductVO.fromEntity(product);
     }
-    @Cacheable(cacheNames = "productById",key = "#id")
+    @Cacheable(cacheNames = "productById", key = "#id")
     public ProductVO getProductById(Long id) {
-        Product product = productMapper.selectById(id);
-        if (product == null) {
+        String missingKey =
+                MISSING_PRODUCT_KEY_PREFIX + id;
+
+        if (Boolean.TRUE.equals(
+                stringRedisTemplate.hasKey(missingKey)
+        )) {
             throw new BusinessException(404, "商品不存在");
         }
+
+        Product product = productMapper.selectById(id);
+
+        if (product == null) {
+            stringRedisTemplate.opsForValue().set(
+                    missingKey,
+                    "1",
+                    5,
+                    TimeUnit.MINUTES
+            );
+
+            throw new BusinessException(404, "商品不存在");
+        }
+
         return ProductVO.fromEntity(product);
     }
     @CacheEvict(cacheNames = "productById",key = "#id")
@@ -302,6 +341,7 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
             product.setCreateTime(now);
             product.setUpdateTime(now);
             productMapper.insert(product);
+            clearMissingProductMarker(product.getId());
             result.add(ProductVO.fromEntity(product));
         }
         return result;
@@ -327,6 +367,9 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
             products.add(product);
         }
         saveBatch(products);
+        for (Product product : products) {
+            clearMissingProductMarker(product.getId());
+        }
         return products.stream().map(ProductVO::fromEntity).toList();
     }
 
@@ -339,6 +382,9 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
         if (affected == 0) {
             throw new BusinessException(404, "商品不存在");
         }
+
+        clearMissingProductMarker(id);
+
         Product product = productMapper.selectById(id);
         return ProductVO.fromEntity(product);
     }
