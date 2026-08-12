@@ -787,3 +787,745 @@ ProductVO productVO = new ...;      // 里面的单个对象——冲突！
 - **开始投递门槛：已达到，但按当前决定暂不投递。**
 - **稳定技术面门槛：尚未达到。** 当前主要短板是脱离提示组织代码、读懂较复杂 Java 表达式和独立排错。
 - 下一步：完成一次完整 Debug 流程，观察异常抛出和测试通过；随后做一次真实项目错误定位，不继续增加低价值 CRUD。
+
+### IDEA Debug 与测试失败定位（已完成）
+
+- 已在 `ProductService` 价格区间判断处设置断点，观察 `minPrice=1000.00`、`maxPrice=100.00`，使用 `F8` 执行到抛出异常，并使用 `F9` 继续运行到测试结束。
+- 理解 `assertThrows()` 期望目标代码抛出指定异常，因此业务代码执行 `throw` 后测试仍然可以成功。
+- 能阅读简单调用栈：异常名称说明发生了什么，`ProductService.java:行号` 是异常产生位置，`ProductServiceTest.java:行号` 是调用位置。
+- 能根据 JUnit 的 `Expected` 与 `Actual` 判断测试命中了错误的校验分支；能根据 Mockito 的 `No interactions wanted` 判断非法参数没有在数据库访问前被拦截。
+- 当前已完成一次完整 Debug 流程；常用断点、Variables、`F8` 和 `F9` 已理解，仍需在后续真实错误中继续使用才能达到熟练。
+
+### Controller 切片测试
+
+- 新增 `ProductControllerTest`，使用 `@WebMvcTest` 和 `MockMvc` 验证扣库存接口的 HTTP 请求、JSON 转换、参数校验和统一响应。
+- 失败路径：`quantity=-1` 返回 HTTP 400，错误消息正确，并通过 `verifyNoInteractions(productService)` 证明请求未进入业务层。
+- 成功路径：合法请求返回 200，并通过 `verify(productService).deductStock(4L, 2)` 证明路径 ID 和 JSON 数量正确传入 Service。
+- `@WebMvcTest` 初次启动时缺少 `JwtTokenProvider`；增加 `@MockBean JwtTokenProvider` 后成功加载精简 Web 环境。
+- 能区分 Service 单元测试、Controller 切片测试和 Spring 上下文测试；当前 Controller 测试关闭 Security 过滤器，因此不用于证明 JWT 正确。
+
+### 库存概览 SQL 聚合优化
+
+- 将库存概览接口从 4 条独立统计 SQL 优化为 1 条条件聚合 SQL，一次返回商品总数、上架商品数、缺货商品数和上架库存总价值。
+- 使用 `COUNT(CASE WHEN ... THEN 1 END)` 完成条件计数，使用 `SUM(CASE WHEN ... THEN price * stock ELSE 0 END)` 计算库存价值，使用 `COALESCE(..., 0)` 防止空表返回 `null`。
+- 真实排错时根据 MyBatis 日志发现仍执行 4 条 SQL，读取源码后确认 Mapper 已增加新方法，但 Service 仍调用旧逻辑；修改 Service 后日志只剩 1 条统计 SQL。
+- 通过接口结果和 MyBatis 日志验证四项统计正确；`EXPLAIN` 显示小表约扫描 25 行并选择 `ALL`，由于约 92% 数据符合逻辑删除条件且聚合需要读取大部分数据，目前全表扫描合理。
+
+### 注册并发、日志与状态枚举
+
+- 理解“先 `selectCount` 再插入”不能单独解决并发注册：两个请求可能同时查询到用户名不存在；数据库唯一索引负责最终防止重复数据。
+- 在 `AuthService.register()` 捕获 `DuplicateKeyException`，把数据库重复键错误转换成 400“用户名已存在”，并通过 Mockito 模拟插入冲突验证异常转换。
+- 能说明 Service 预查询用于改善普通请求反馈，数据库唯一索引用于并发情况下的最终保证。
+- 在 `OrderService` 使用 SLF4J `log.info` 记录订单创建成功的订单 ID、用户 ID、商品 ID 和数量；已通过真实创建订单请求观察到日志，未记录密码或 JWT。
+- 创建 `OrderStatus` 和 `ProductStatus` 枚举，集中维护状态码和中文文本；数据库与 Entity 继续使用整数，Service 和 VO 不再直接依赖部分魔法数字。
+- 理解枚举的 `values()` 返回全部枚举值，增强 `for` 循环逐个比较 code，匹配后返回 text，未匹配时返回“未知状态”。
+
+### Maven 编译排错与并发机制复盘
+
+- 创建 `ProductStatus` 后遇到测试编译阶段找不到主类和 `NoSuchFileException`；确认源码存在后使用 `mvn clean test` 删除旧 `target` 并完整重建，问题解决。
+- 能区分日常使用 `mvn test`，编译缓存明显异常时使用 `mvn clean test`；不需要每次都执行 `clean`。
+- 能说明 `synchronized` 主要约束单个 JVM；多实例共享库存应由数据库原子 SQL 提供最终并发保证。
+- 能区分原子 SQL 与事务：原子 SQL 防止库存扣成负数，`@Transactional` 保证库存、库存流水和订单保存作为整体提交或回滚。
+
+### 微服务调用链重新梳理
+
+- 已按真实代码区分两个调用路径：Gateway 可直接通过 `lb://notification-service` 转发到通知服务；也可先进入主服务，再由 `NotificationClient` 通过 OpenFeign 调用通知服务。
+- 能说明 Gateway 负责统一入口、JWT 校验和路由；Nacos 保存服务名与实例地址；OpenFeign 把跨服务 HTTP 请求封装成 Java 接口调用。
+- 当前属于“结合真实代码理解调用链”，尚未达到能独立搭建 Nacos、OpenFeign、Gateway 的程度；后续应从现有三个模块的运行和故障验证继续，不新增第二套示例。
+
+### 今日达标判断与下一步
+
+- **项目展示门槛：已达到并进一步增强。** 新增 Controller 测试、统计 SQL 优化、并发注册兜底、业务日志和状态枚举。
+- **开始投递门槛：已达到。** 按用户当前决定暂不投递，不反复催促。
+- **稳定技术面门槛：仍未完全达到，但真实排错能力有明显进步。** 今天能够根据日志发现 Service 未调用新 Mapper，并使用 `mvn clean test` 处理编译缓存异常。
+- 下一步：继续运行并解释现有微服务的完整请求链与故障降级；Java 练习继续要求从方法签名独立组织代码，不增加低价值 CRUD。
+
+### 微服务环境实际运行与当前掌握程度
+
+- 实际启动了 `springboot-practice` 中的 Nacos、主服务、通知服务、Gateway、MySQL、Redis 和 RabbitMQ 容器。
+- 验证了通知服务直连地址：`8081/api/notifications/ping` 返回 200。
+- 验证了主服务通过 OpenFeign 调用通知服务：`8080/api/microservices/notification/ping` 返回 200。
+- 验证了不携带 JWT 访问 Gateway 完整路径时返回 401，说明请求在网关鉴权阶段被拦截。
+- 注册测试用户时遇到 500，通过日志定位到 `UnknownHostException: mysql`，确认不是 JSON 写错，而是主服务容器无法解析 MySQL 服务名。
+- 重新创建 MySQL、Redis、主服务和 Gateway 容器后，MySQL 正确加入 `springboot-practice_default` 网络，并获得 `mysql` 网络别名。
+- 当前能够在指导下完成容器启动、接口请求和日志验证，但对完整微服务调用链仍然看不懂，**不能记录为已经掌握 Nacos、Gateway 或 OpenFeign**。
+
+当前只需要先记住一条主线：
+
+```text
+Postman -> Gateway -> 主服务 -> 通知服务 -> 返回结果
+```
+
+- Gateway：统一接收请求并检查 JWT，然后把请求转发给目标服务。
+- Nacos：保存“服务名对应哪些运行地址”，帮助 Gateway 和 OpenFeign寻找服务。
+- OpenFeign：主服务调用通知服务时使用的 Java 接口，底层仍然发送 HTTP 请求。
+- Docker 网络：让容器能够使用 `mysql`、`redis` 等服务名互相访问。
+
+#### 本次真实掌握判断
+
+- **完成程度：** 在帮助下运行成功并验证了部分链路。
+- **理解程度：** 只知道组件的大致职责，完整请求过程暂时无法独立复述。
+- **独立能力：** 暂时不能独立搭建或排查这套微服务环境。
+- **简历表述：** 目前最多写“了解 Nacos、OpenFeign、Gateway 的基本作用”，不能写“熟练掌握 Spring Cloud 微服务”。
+
+#### 下一步
+
+- 暂停增加新的微服务术语和配置。
+- 只选一次成功请求，根据真实 Controller、Feign Client 和 Gateway 配置逐段追踪，不要求背配置。
+- 验收标准：能够用自己的话说明请求先到哪里、谁调用谁、Nacos在其中提供什么信息。
+
+## 2026-08-01 学习记录
+
+### Gateway、Nacos 与 OpenFeign 真实调用链
+
+- 根据 `springboot-practice` 的真实 Gateway 配置、`MicroserviceController`、`NotificationClient` 和通知服务 Controller，逐段追踪了一次请求。
+- 能理解访问 `9000` 端口时，请求首先进入 Gateway；Gateway 根据 `/user/**` 路由选择主服务，并通过 `StripPrefix=1` 删除只用于网关识别服务的 `/user` 前缀。
+- 能理解主服务的类级 `@RequestMapping` 与方法级 `@GetMapping` 会拼成完整接口路径。
+- 已修正调用顺序：不是 Gateway 调用 OpenFeign，而是 Gateway 先把请求转发给主服务，再由主服务的 `MicroserviceController` 调用 `notificationClient.ping()`。
+- 能说明 OpenFeign 负责发送服务之间的 HTTP 请求，Nacos 只负责根据服务名提供实际服务地址，不参与最终业务数据返回。
+- 能说明返回值遵循“谁调用，结果先返回给谁”：通知服务结果先回主服务，再回 Gateway，最后回 Postman。
+
+当前能够复述的请求与返回路线：
+
+```text
+请求：Postman -> Gateway -> 主服务 -> 通知服务
+返回：通知服务 -> 主服务 -> Gateway -> Postman
+```
+
+### OpenFeign Fallback 降级
+
+- 阅读真实 `NotificationClientFallback`，理解 `fallbackFactory` 把 OpenFeign 接口与备用实现关联起来。
+- 理解 `FallbackFactory.create(Throwable cause)` 会在调用失败时创建备用的 `NotificationClient`；`cause` 保存连接失败、超时等原因。
+- 能把 Lambda `return () -> "通知服务暂时不可用，请稍后再试"` 对应到“实现 `NotificationClient.ping()` 并直接返回备用文本”。
+- 实际停止通知服务后请求主服务，成功获得“通知服务暂时不可用，请稍后再试”，随后重新启动通知服务。
+- 能说明 Fallback 不会自动修复或重启通知服务，它只提供备用结果，避免依赖故障直接演变成主服务 500。
+
+### RabbitMQ 概念、代码与实际日志
+
+- 能区分 OpenFeign 与 RabbitMQ：需要立即取得另一个服务的结果时使用 OpenFeign；不需要立即结果、希望稍后异步处理时可使用 RabbitMQ。
+- 阅读真实 `TaskNotificationProducer`，理解 `RabbitTemplate` 由 Spring 注入，`convertAndSend(交换机, 路由键, 消息)` 负责发送消息。
+- 阅读真实 `TaskNotificationConsumer`，理解 `@RabbitListener` 会持续监听指定队列；队列出现消息后由 Spring 自动把消息传给方法参数，不需要 `TaskService` 手动调用消费者。
+- 阅读真实 `RabbitConfig`，理解配置类创建 Queue、TopicExchange，并通过 Binding 和 Routing Key 建立交换机到队列的路由规则。
+- 能解释 Spring AMQP、RabbitMQ 的关系：AMQP 是消息协议，RabbitMQ 是消息中间件，Spring AMQP 提供 Java 操作封装。
+- 通过真实创建任务接口观察到生产者发送、请求完成、消费者收到消息并处理的日志，验证了基础异步消息链路。
+- 能独立复述：生产者发送消息，交换机根据 Routing Key 路由，队列保存消息，消费者取得并处理。
+
+### AOP 真实代码阅读
+
+- 阅读 `PerformanceAspect` 和 `LogAspect`，理解 AOP（Aspect-Oriented Programming，面向切面编程）用于集中处理日志、耗时统计等公共逻辑，避免在每个业务方法中重复编写。
+- 能说明 `@Aspect` 标记切面，`@Pointcut` 选择目标方法，`@Around` 在目标方法前后执行公共代码。
+- 理解 `joinPoint.proceed()` 会继续执行被拦截的原业务方法并取得返回值；删除它会导致真正的 Service 方法不执行。
+- 能说明 `PerformanceAspect` 统计 Service 方法耗时，`LogAspect` 记录 Controller 请求方式、路径、用户、IP、耗时和异常。
+- 能读懂 `execution(* com.example.springbootpractice.service.*.*(..))` 的整体意思：匹配 Service 包中任意类、任意返回类型、任意参数的方法；当前不要求默写表达式。
+
+### 今日真实掌握程度
+
+- **已达到：** 能结合项目真实代码解释 Gateway、OpenFeign、Nacos、Fallback、RabbitMQ 和 AOP 的核心职责；能读懂最基础的 Producer、Consumer 和切面代码。
+- **尚未达到：** 不能从空白独立搭建微服务、RabbitMQ 配置或 AOP 切面；复杂配置和固定 API 仍需查资料或使用模板。
+- **学习方式修正：** 框架学习不能只停留在概念流程；建立概念后必须回到真实代码，至少读懂入口、核心调用和验证日志，才能算“接触并理解”。
+- **简历边界：** 当前可以表述为“了解 Nacos、OpenFeign、Gateway、RabbitMQ 和 AOP 的基本使用与调用流程”，不能写“熟练掌握 Spring Cloud 微服务”。
+
+### 达标判断与下一学习日六小时安排
+
+- **项目展示门槛：已达到。** 库存订单主项目仍是简历核心，微服务练习只作为扩展认知。
+- **开始投递门槛：已达到。** 按当前决定暂不投递，等待用户主动开始。
+- **稳定技术面门槛：尚未达到。** 当前框架流程能在提示下解释，但独立编码、稳定复述和错误定位仍需练习。
+
+下一学习日不继续增加 Sentinel、死信队列等新技术，安排如下：
+
+1. 1 小时：不看文档画出并口述 Gateway、主服务、OpenFeign、Nacos、通知服务的请求与返回路线，验收为连续讲清一次。
+2. 1 小时：阅读 Producer、Consumer 和 RabbitConfig，各自用一句话说明作用，验收为能解释 `convertAndSend()` 三个参数和 `@RabbitListener`。
+3. 1.5 小时：回到 `inventory-order-system`，独立阅读一个 Controller -> Service -> Mapper 完整调用链，不增加新接口，输出调用步骤。
+4. 1.5 小时：完成一个 Java 集合或对象练习，要求从方法签名独立组织代码并运行成功。
+5. 1 小时：复盘项目高频面试题，验收为独立回答事务、原子扣库存、Redis 缓存一致性以及 OpenFeign/RabbitMQ 的区别。
+
+### 事务边界、MQ 幂等与真实代码补充
+
+- 能区分订单核心操作与辅助操作：扣减库存、保存库存操作记录和保存订单应处于同一个数据库事务；欢迎邮件、订单通知不应因为发送失败而回滚已经成功的订单。
+- 阅读 `springboot-practice` 的真实 `TaskService.createTask()` 后确认：当前代码先执行 `taskMapper.insert(task)`，再调用 Producer 发送 RabbitMQ 消息，并且该方法当前没有 `@Transactional`。
+- 能分析当前演示代码的风险：任务写入 MySQL 后若 MQ 发送抛出异常，接口可能返回 500，但任务已经存在；用户再次提交可能产生重复任务。
+- 理解 Idempotency（幂等性）的核心含义：同一请求或同一消息重复到达时，只产生一次有效业务结果。消费者也需要防止重复消息造成重复短信、重复库存操作等副作用。
+- 已明确普通 `@Transactional` 默认保证的是数据库操作，不能单独保证 MySQL 与 RabbitMQ 一定同时成功；本地消息表、消息确认等可靠消息方案属于后续扩展，目前不要求实现。
+- 进一步对应真实消费者代码：`@RabbitListener` 监听队列，消息到达后由 Spring AMQP 自动调用 `handleTaskCreated(String message)`，它不是由 Controller 或 TaskService 手动调用。
+
+### 订单 Service 单元测试补充
+
+- 阅读并解释 `shouldNotRestoreStockWhenOrderAlreadyCancelled()`：`assertThrows()` 验证异常结果，两个 `verify(..., never())` 分别保证取消 SQL 和退库存方法没有被错误调用。
+- 能说明只验证异常还不够：方法可能先错误修改库存再抛异常，因此还需要验证关键依赖的调用行为。
+- 完成并运行 `shouldCreateOrderSuccessfully()`，验证订单总价为 `200.00`、`deductStock(4L, 2)` 被调用、`sysOrderMapper.insert(any(SysOrder.class))` 被调用，运行结果为 `exit code 0`。
+- 已理解一次 `verify(productService).deductStock(4L, 2)` 会同时验证商品 ID 和数量，不需要为两个参数重复写两次相同验证。
+- 能区分 Mockito 单元测试与集成测试：当前测试验证 Service 计算、分支和依赖调用，不能证明真实 SQL、Spring 配置或数据库事务回滚一定正确。
+
+### 本轮达标判断与下一学习日六小时安排
+
+- **项目展示门槛：已达到。** 能展示库存订单核心业务、事务、原子扣库存、Redis、JWT、Docker，并能把 MQ 作为扩展学习内容说明。
+- **开始投递门槛：已达到。** 当前按本人决定暂不投递；需要投递时再进入岗位筛选与沟通阶段。
+- **稳定技术面门槛：尚未达到。** 在真实代码和提示下能够正确解释，但从空白独立写测试、稳定复述 MQ 可靠性和快速定位异常仍需练习。
+
+下一学习日安排：
+
+1. 1.5 小时：从空白完成 1 个包含正常分支和异常分支的 Java 方法，运行至少 3 组输入。
+2. 1 小时：不看答案复述创建订单、取消订单的事务边界，验收为说明哪些操作必须共同回滚。
+3. 1 小时：独立阅读 1 个现有 Service 单元测试，指出准备数据、执行方法、结果断言和行为验证四部分。
+4. 1 小时：完成 2 道数组、Map、Set 或栈的简单题，每题写出时间复杂度。
+5. 1 小时：复盘 RabbitMQ 生产者、交换机、队列、消费者和幂等，验收为结合真实类名连续说明一次。
+6. 0.5 小时：运行主项目测试并检查 `git diff --check`，只整理学习产生的真实改动。
+
+### 后端巩固与前端开始时间
+
+- 当前求职定位继续保持 Java 后端，前端只作为接口联调和项目展示能力，不转为前端学习路线。
+- 接下来先用 5～7 个学习日巩固 Java 独立编码、订单业务、MySQL、事务、测试、排错和现有微服务调用链。
+- 达到以下三个条件后开始前端：能独立讲清订单与事务；能独立修改一个简单 Service 方法并补测试；能判断常见编译、启动和 HTTP 状态码错误。
+- 前端开始后采用“每天后端 4 小时、前端 2 小时”，先学习 HTML、CSS、JavaScript、Vue、Axios、JWT 请求和简单列表页面，不深入复杂样式与前端底层原理。
+
+未来 7 天主线：
+
+1. Java 集合、栈和数组，独立完成 2 道简单题并说明复杂度。
+2. 复盘 `OrderService` 创建、查询、取消订单，独立阅读 1 个单元测试。
+3. 独立完成 5 条包含 JOIN、分组或索引分析的业务 SQL。
+4. 复盘事务、原子扣库存、并发超卖和幂等，连续回答 4 个项目问题。
+5. 走通 JWT、Redis、Docker 启动与一次真实日志排错。
+6. 根据真实代码复述 Gateway、Nacos、OpenFeign、RabbitMQ 的调用链，不增加新中间件。
+7. 独立修改一个小方法、补测试并构建成功；若验收通过，当天开始 2 小时前端基础。
+
+## 2026-08-02 学习记录
+
+### Java 栈独立编码
+
+- 不看昨日完整答案，从空白独立写出 `ValidParenthesesReview.isValid()`，正确使用 `ArrayDeque<Character>`、`push()`、`pop()`、`isEmpty()` 和三组括号配对判断。
+- 通过 5 组输入验证：正常连续括号、交叉错误、嵌套括号、只含左括号和只含右括号，结果全部正确。
+- 能说明 `text.toCharArray()` 把字符串转换为字符数组，增强 `for` 每轮把一个字符赋给 `current`。
+- 能解释 `char left = stack.pop()`：从栈顶删除最近的左括号，并把该字符保存到局部变量 `left`。
+- 完成第二道栈题“删除字符串中的相邻重复项”，独立写出 `peek()` 比较栈顶、相同则 `pop()`、不同则 `push()` 的核心循环，测试运行成功。
+- 能判断两道题时间复杂度均为 `O(n)`、最坏空间复杂度均为 `O(n)`。
+
+### 创建与取消订单事务复盘
+
+- 已纠正事务操作对象：创建订单需要共同保证的是扣减 `product` 库存、插入 `stock_operation` 流水和插入 `sys_order` 订单；`sys_user` 在该流程中只查询，不是需要回滚的修改。
+- 能说明 Spring 默认根据方法是否抛出运行时异常判断事务回滚；`return null` 属于正常返回，不能作为可靠的失败信号。当前项目没有使用该错误写法。
+- 能复述取消订单的核心校验：查询当前用户与订单并比较 `userId`，原子 SQL 只有满足订单 ID、用户 ID、`status = 1` 时才修改成功。
+- 能说明 `affectedRows = 0` 表示数据库没有被修改，不能退库存；只有影响一行后才调用 `addStock()`，避免并发重复取消造成重复退库。
+- 能说明 `cancelOrder()` 使用 `@Transactional` 的原因：订单状态、商品库存和入库流水必须一起成功或回滚。
+
+### OrderService 单元测试
+
+- 能分辨测试的 Arrange（准备数据与 Mock）、Act（调用 Service）、Assert（检查返回值或异常）和 Verify（检查依赖调用）四部分。
+- 理解 `when(...).thenReturn(...)` 不会调用 Service，也不会查询数据库；它提前规定 Mock Mapper 将来被 Service 调用时返回什么对象。
+- 能找到真正执行 Service 的 `orderService.createOrder(username, request)`，并理解 Mock 返回值会进入 Service 内部对应的 Mapper 调用位置。
+- 能区分正常测试和异常测试：正常分支直接调用方法，意外抛异常会自动失败；异常分支使用 `assertThrows()`，未抛出预期异常则测试失败。
+- 新增并通过 `shouldCreateOrderSuccessfully()`：验证总价 `200.00`、扣减商品 4 的 2 件库存、保存 `SysOrder`。
+- 新增并通过 `shouldThrowWhenProductDoesNotExist()`：商品 `999999` 返回空时断言 404，并验证既不扣库存也不保存订单。
+- 单独测试和全部 `mvn test` 均成功，`git diff --check` 通过。
+
+### MySQL 五条业务 SQL 与执行计划
+
+- 完成商品有效订单销售汇总：使用 `LEFT JOIN`、`COUNT(o.id)`、`SUM()`、`COALESCE()`、`GROUP BY` 和 `ORDER BY`，无订单商品仍显示 0。
+- 使用 `HAVING` 只保留有效售出件数大于等于 2 的商品，能区分 `WHERE` 在分组前过滤、`HAVING` 在分组后过滤聚合结果。
+- 使用 `NOT EXISTS` 查询没有有效订单的商品；首次误写 `o.id = p.id`，已改为正确关联 `o.product_id = p.id` 并验证结果。
+- 编写库存流水一致性查询，使用入库加法和出库减法检查异常；首次使用 `=` 查到正常记录，已改为 `<>` 查询错误记录，结果为空。
+- 编写订单金额一致性查询，检查 `total_price <> unit_price * quantity`，结果为空。
+- 能解释 `COALESCE(SUM(...), 0)` 把没有数据时的 `NULL` 替换为 0，而 `COUNT(o.id)` 本身不统计 `NULL`。
+- 能区分三种写法：不限制订单状态会统计全部订单；把状态放在 `ON` 中会保留全部商品但只连接有效订单；把右表状态放在 `WHERE` 中会过滤没有有效订单的商品。
+- 阅读销售汇总 `EXPLAIN`：当前 `product` 约 25 行、`sys_order` 约 8 行，优化器选择全表扫描和哈希连接属于合理结果；理解 `type = ALL` 不等于 SQL 必然慢，需要结合数据量和查询目的。
+
+### 今日达标判断
+
+- **项目展示门槛：已达到。** 今天能够根据真实代码解释创建、取消订单和事务边界，并用 SQL 验证订单、库存流水一致性。
+- **开始投递门槛：已达到。** 继续遵循本人暂不投递的决定，需要投递时再启动岗位沟通。
+- **稳定技术面门槛：尚未完全达到。** 栈题和基础测试已有独立完成证据，但 Mapper 选择、SQL 关联字段和状态码仍会在首次编写时混淆。
+- **前端开始条件：正在接近。** 已达到独立修改测试并完成全量回归；还需稳定完成一次 JWT/Redis/Docker 排错复盘后开始每天 2 小时前端。
+
+### 下一学习日六小时安排
+
+1. 1 小时：独立完成 2 道数组、Map 或 Set 简单题，运行至少 3 组边界输入并写复杂度。
+2. 1.5 小时：读取主项目 Redis 缓存真实代码，独立讲清首次查询、缓存命中和修改后失效三条路径。
+3. 1 小时：读取 JWT 过滤器真实代码，不看总结复述 Token 校验和 `SecurityContext` 写入流程。
+4. 1 小时：启动主项目 Docker Compose，验证 health、登录和一个商品查询，并根据日志区分缓存命中与数据库查询。
+5. 1 小时：连续回答事务、原子扣库存、订单价格快照、`LEFT JOIN` 和 Mockito 五个项目问题。
+6. 0.5 小时：清理两个测试文件的多余空行与注释缩进，运行 `mvn test`、`git diff --check`，只提交确认过的改动。
+
+## 2026-08-03 学习记录
+
+### Java Map 题
+
+- 完成“有效的字母异位词”：先检查两个字符串长度，再使用 `Map<Character, Integer>` 对第一个字符串计数、对第二个字符串减数，最后遍历 `map.values()` 检查所有次数是否为 0。
+- 首次把字符 Map 当作数组使用 `map.get(i)`，已理解 Map 应通过真实 key 查值；只需要全部 value 时应遍历 `values()`。
+- 完成“多数元素”的 HashMap 解法：遍历数组累计每个数字的出现次数，当次数大于 `nums.length / 2` 时返回该数字。
+- 首次把多数元素条件写成大于数组总长度，已纠正为严格大于数组长度的一半。
+- 两题均完成多组输入验证；HashMap 解法的时间复杂度为 `O(n)`，空间复杂度为 `O(n)`。
+
+### Redis 真实代码与运行验证
+
+- 核对主项目真实代码：`@Cacheable(cacheNames = "productById", key = "#id")` 使用方法参数 `id` 生成商品缓存 key；命中缓存时跳过方法体和 MySQL 查询。
+- 理解 `@CacheEvict(key = "#id")` 只删除一个商品缓存，`allEntries = true` 清空 `productById` 缓存区域，适用于批量修改或删除。
+- 核对真实配置：商品缓存 TTL 为 10 分钟，且 `cache-null-values=false`，不存在商品不会缓存。
+- 明确项目现状：当前实现了商品缓存和修改后失效，但没有实现空值缓存或布隆过滤器，因此不能声称已经解决缓存穿透。
+- 启动 Docker Compose 后确认 `inventory-app` 正常运行，`inventory-mysql` 与 `inventory-redis` 均为 healthy。
+- 发现容器 MySQL 与 Windows 本地 MySQL 是两套独立数据；容器中有效测试商品 ID 为 1，使用 ID 4 查询得到 404 属于数据不存在，不是 JWT 或缓存故障。
+- 清除 `productById::1` 后连续查询商品 1，日志只出现一次 MySQL `SELECT`，验证首次未命中查询数据库并回填、第二次命中 Redis 不再执行 SQL。
+
+### JWT 与项目问题复盘
+
+- 根据真实 `JwtAuthenticationFilter`、`JwtTokenProvider` 和 `SecurityConfig` 复述请求链路：读取 Authorization、截取 Bearer Token、校验签名与过期时间、提取 username 和 role、构造 Authentication、写入 SecurityContext、继续过滤器链。
+- 理解 `filterChain.doFilter()` 让请求继续经过后续过滤器并进入 Controller；没有这一步，请求会停在当前过滤器。
+- 连续回答事务、原子扣库存、订单价格快照、LEFT JOIN 和 Mockito 五个问题；事务、原子 SQL、价格快照和 JOIN 已基本正确。
+- 修正 Mockito 概念：`when(...).thenReturn(...)` 是预设 Mock 方法将来的返回行为，不是读取参数；`assertEquals()` 比较结果，`verify()` 检查依赖方法是否按预期调用。
+- 整理测试格式后运行全量测试：`Tests run: 16, Failures: 0, Errors: 0, Skipped: 0`，结果为 `BUILD SUCCESS`；`git diff --check` 无格式错误，只有正常的 LF/CRLF 提示。
+
+### 今日达标判断
+
+- **项目展示门槛：已达到。** 能用真实日志演示 JWT 保护接口、Redis 缓存命中、Docker 容器运行，并能说明订单事务和原子扣库存。
+- **开始投递门槛：已达到。** 继续遵循本人暂不投递的决定，需要投递时再开始岗位筛选与沟通。
+- **稳定技术面门槛：正在接近但尚未完全达到。** 核心项目问题已能回答，但 Mockito 的 Mock 行为、容器与本地数据边界仍需要更多独立排错练习。
+- **前端开始条件：已达到基础启动条件。** 已能解释订单事务、完成测试修改并识别常见 404、401 和运行环境问题；后续可以按“后端 4 小时 + 前端 2 小时”开始接口联调所需的前端基础，不改变 Java 后端求职方向。
+
+### 下一学习日六小时安排
+
+1. 2 小时：前端基础第一天，完成一个包含标题、商品表格和查询按钮的静态 HTML 页面，能解释标签、属性和基本 CSS，不接后端。
+2. 1 小时：从空白完成 1 道数组或 Map 简单题，至少运行正常、空数据和边界数据 3 组输入，并说明复杂度。
+3. 1 小时：独立阅读一个现有 Service 方法和对应测试，用 Arrange、Act、Assert、Verify 标出四部分，不新增业务接口。
+4. 1 小时：独立写 3 条订单业务 SQL，至少包含一次 JOIN、一次 GROUP BY/HAVING 和一次数据一致性检查。
+5. 1 小时：不看文档连续复述 JWT、Redis、事务、原子扣库存和 Docker 五个项目问题，并运行一次 `mvn test` 验证项目状态。
+## 2026-08-03 学习记录
+
+### Java Map 练习
+
+- 完成“有效的字母异位词”：使用 `Map<Character, Integer>` 对第一个字符串计数、对第二个字符串减数，并通过 `map.values()` 判断计数是否全部归零。
+- 修正了把 `Map<Character, Integer>` 当成数字下标访问的错误：`map.get(i)` 中的 `i` 是整数，不能用于读取字符键；遍历值应使用 `map.values()`。
+- 完成“多数元素”的 Map 解法：遍历数组累计次数，当次数大于 `nums.length / 2` 时返回该数字。
+- 两道题均能说明时间复杂度为 `O(n)`，Map 解法的空间复杂度为 `O(n)`。
+
+### Redis、JWT 与 Docker 真实验证
+
+- 根据主项目真实代码复习 `@Cacheable(cacheNames = "productById", key = "#id")`：`#id` 使用当前方法的 `id` 参数作为缓存键，不同商品使用不同缓存条目。
+- 能区分单个缓存失效与批量失效：修改单个商品使用 `key = "#id"`，批量操作使用 `allEntries = true` 清空该缓存区域。
+- 确认当前配置 `spring.cache.redis.cache-null-values=false`，不存在的商品不会缓存；重复查询不存在的 ID 仍会访问 MySQL，因此当前项目不能表述为已经解决缓存穿透。
+- 读取真实 `JwtAuthenticationFilter`、`JwtTokenProvider` 和 `SecurityConfig`，复习了读取 Bearer Token、校验签名和过期时间、提取用户名与角色、创建 `Authentication`、写入 `SecurityContext` 以及继续过滤器链的流程。
+- 启动并确认 Docker Compose 中应用、MySQL、Redis 三个容器正常，MySQL 和 Redis 均为 healthy。
+- 使用 Docker 数据库中的真实商品 ID `1` 连续查询两次：第一次日志出现 MyBatis 查询 SQL，第二次没有重复 SQL，验证 Redis 缓存命中成功。
+- 能判断 Docker MySQL 与 Windows 本地 MySQL 是两套数据；请求商品 ID `4` 返回 404 后，通过容器数据库确认可用商品 ID 为 `1`。
+
+### 项目面试题与测试收尾
+
+- 能回答订单事务、原子扣库存、订单价格快照和 `LEFT JOIN` 条件位置的核心作用。
+- 进一步修正 Mockito 术语：`when(...).thenReturn(...)` 是预设 Mock 行为，不是读取参数；`assertEquals()` 比较预期与实际结果，`verify()` 验证依赖方法及参数。
+- 全量执行 `mvn test`：共 16 个测试，Failures 0、Errors 0、Skipped 0，结果 `BUILD SUCCESS`。
+- `git diff --check` 通过，仅存在 Windows 下正常的 LF/CRLF 提示。
+
+### 今日达标判断
+
+- **项目展示门槛：已达到。** 能用真实日志展示 JWT 认证后的商品查询、Redis 首次查询与缓存命中，并能解释项目核心事务与并发控制。
+- **开始投递门槛：已达到。** 继续遵循本人暂不投递的决定，准备投递时再进行岗位筛选和沟通。
+- **稳定技术面门槛：继续接近但尚未完全达到。** 核心流程已能回答，仍需减少对提示的依赖，并稳定区分 Mock 预设行为、真实数据库行为和缓存行为。
+- **前端开始条件：基本达到。** 已完成独立测试修改、全量回归以及 JWT/Redis/Docker 真实验证；下一学习日完成一次独立 Service 小修改与测试后，可开始每天 2 小时前端基础。
+
+### 下一学习日六小时安排
+
+1. 1 小时：从空白完成 2 道数组、Map 或 Set 简单题，每题运行 3 组输入并写出复杂度。
+2. 1.5 小时：独立阅读一个现有 Service 方法，画出 Controller → Service → Mapper/Redis 的调用链，不新增低价值接口。
+3. 1.5 小时：独立完成一个小型 Service 校验修改，并补充正常或异常分支单元测试。
+4. 1 小时：复盘 MySQL 索引、事务、行锁和 2 条业务 SQL，要求能解释执行结果。
+5. 0.5 小时：连续口述 JWT、Redis 缓存一致性、原子扣库存三个项目问题。
+6. 0.5 小时：运行 `mvn test`、`git diff --check` 并整理改动；验收通过后开始安排后端 4 小时、前端 2 小时的学习节奏。
+## 2026-08-04 学习记录
+
+### Service 校验与全量测试
+
+- 在 `OrderService.createOrder()` 最前面增加购买数量校验：`quantity == null` 或小于 `1` 时抛出 400，避免错误输入进入用户查询、商品查询和库存扣减流程。
+- 独立完成 `shouldRejectInvalidOrderQuantity()`，使用 `assertThrows()` 检查异常，并使用 `verifyNoInteractions()` 验证 `sysUserMapper`、`productMapper`、`sysOrderMapper` 和 `productService` 均未被调用。
+- 单独执行 `OrderServiceTest`：4 个测试全部通过。
+- 执行全量 `mvn test`：17 个测试，Failures 0、Errors 0、Skipped 0，结果 `BUILD SUCCESS`；`git diff --check` 通过。
+
+### 前端基础与真实接口联调
+
+- 在主项目中新建 `frontend/index.html`、`style.css` 和 `app.js`，使用 IDEA 静态服务器成功打开页面。
+- 掌握 HTML 的页面结构以及 `h1`、`p`、`label`、`input`、`button`、`div`、`link`、`script` 的基本用途。
+- 使用 CSS 完成输入框、按钮、鼠标悬停、结果卡片和商品列表的基础样式；理解标签选择器、ID 选择器、类选择器、内外边距、圆角和阴影。
+- 使用 `getElementById()`、`addEventListener()`、`value`、`textContent` 和 `innerHTML` 完成页面交互，能区分普通文本显示和 HTML 解析。
+- 从单个模拟商品过渡到商品数组，使用 `find()` 查找商品，使用 `map()` 和 `join("")` 渲染商品列表。
+- 新增开发环境 CORS 配置，允许 `http://localhost:*` 的前端页面访问后端常用 HTTP 方法和请求头；重新打包并构建 Docker 后，通过前端 `fetch()` 成功读取 `/actuator/health`。
+- 完成真实登录：前端 POST JSON 到 `/api/auth/login`，读取 `responseData.data.token`，并在后续商品请求中添加 `Authorization: Bearer ...`。
+- 完成真实单个商品查询、商品列表查询和新增商品；数据来自 Docker MySQL，不再使用模拟商品数组。
+- 使用 `createProductHtml()` 提取重复的商品 HTML，理解函数用于封装重复逻辑以及 DRY 原则。
+- 使用 `sessionStorage` 保存 JWT，验证刷新页面后仍可查询；新增退出登录和 401 清理 Token 的逻辑。
+- 能说明 `fetch()` 发起异步请求，第一层 `then()` 处理 HTTP 响应并解析 JSON，第二层 `then()` 使用响应数据，`catch()` 处理请求或解析失败。
+- 已明确前端校验用于改善用户体验，后端 `@Valid` 和 Service 校验才是无法绕过的业务防线。
+
+### MySQL 索引与事务锁
+
+- 对商品名称和价格筛选 SQL 执行 `EXPLAIN`，读到 `type=index`、`key=PRIMARY`、`rows=25`、`Using where; Backward index scan`，能结合小表数据量判断主键倒序扫描是合理选择，而不是看到扫描就盲目加索引。
+- 对当前用户订单分页 SQL 执行 `EXPLAIN`，首次发现运行中的 `sys_order` 只有主键索引，与 `schema.sql` 声明不一致。
+- 理解 Schema Drift（数据库结构漂移）：修改 `CREATE TABLE IF NOT EXISTS` 不会更新 Docker 数据卷中已存在的旧表。
+- 实际添加 `idx_order_user_id(user_id)` 后，执行计划从主键索引扫描变为 `type=ref`、`key=idx_order_user_id`、`ref=const`、`filtered=100%`，完成一次真实索引修复和前后对比。
+- 已提出补充 `idx_order_product_id(product_id)` 以对齐 `schema.sql`，但本轮没有收到执行结果，暂不标记为已完成。
+- 结合真实原子扣库存 SQL理解 InnoDB 行锁：同一商品的并发更新需要排队，后执行请求会基于最新库存重新判断 `stock >= quantity`。
+- 理解事务提交和回滚都会释放行锁；订单保存异常时库存回滚到原值，随后等待中的其他事务可以继续执行。
+
+### 今日达标判断
+
+- **项目展示门槛：已达到。** 除后端核心业务外，已经有一个能够真实登录、查询和新增商品的简单前端联调页面。
+- **开始投递门槛：已达到。** 继续遵循本人暂不投递的决定，准备投递时再开始岗位筛选。
+- **稳定技术面门槛：尚未完全达到。** 已能根据真实执行计划和代码说明索引、事务与缓存，但对事务回滚后释放锁、浏览器存储位置等细节仍需复述巩固。
+- **前端阶段：已经正式开始。** 后续采用每天后端 4 小时、前端 2 小时；前端用于接口联调和项目展示，不改变 Java 后端求职方向。
+
+### 下一学习日六小时安排
+
+1. 1 小时：从空白完成“删除有序数组重复项”和另一道数组/Map 简单题，各运行 3 组输入并写复杂度。
+2. 1 小时：复盘 `OrderService` 创建与取消订单，独立指出事务开始、数据库修改、异常和锁释放位置。
+3. 1 小时：核对运行数据库和 `schema.sql` 的索引差异，确认 `idx_order_product_id`，再完成一条 JOIN 查询的 `EXPLAIN`。
+4. 1 小时：连续回答原子扣库存、事务回滚、Redis 一致性、JWT 和 Mockito 五个项目问题。
+5. 1 小时：整理当前原生 JavaScript，掌握函数、数组、`fetch`、Promise、`sessionStorage` 和错误处理，不继续堆叠页面功能。
+6. 1 小时：了解 Node.js、npm、Vite 和 Vue 的职责；在原生页面逻辑能够复述后，再决定是否创建 Vue 练习项目。
+## 2026-08-04：Java 后端实习竞争力八周计划
+
+### 计划目标
+
+- 学习目标从“达到基础投递线”调整为“提高中国 Java 后端实习筛选和技术面的竞争力”。
+- 每天学习 6 小时，计划周期 8 周；完成后再进行集中投递准备验收。
+- 不再每天重复事务、JWT、Redis 等已经能够解释的内容；旧知识使用第 1、3、7 天间隔复习。
+- 学习时间中约 70% 推进新内容、20% 用于独立编码和排错、10% 用于间隔复习。
+- 暂停深入前端，现有前端页面只用于接口联调和项目展示，当前主线保持 Java 后端。
+
+### 每日六小时固定结构
+
+1. 1.5 小时：Java 基础与算法。
+2. 1.5 小时：MySQL、JVM、并发、网络或操作系统。
+3. 2.5 小时：`inventory-order-system` 项目实战。
+4. 0.5 小时：面试表达、错误复盘、Git 与学习记录。
+
+### 第 1 周：Java 核心基础和独立编码
+
+- 学习数组、字符串、List、Set、Map、Deque、面向对象、泛型、异常、`equals()`、`hashCode()` 和基础 IO。
+- 练习双指针、HashMap、栈和二分查找。
+- 新完成 10 道简单题，其中至少 5 道能够从空白独立完成；每题运行 3 组输入并说明复杂度。
+- 独立完成一个包含对象、集合、参数校验和异常处理的小程序。
+- 当前进度：已完成删除有序数组重复项、删除指定元素和移动零三道双指针练习。
+
+### 第 2 周：多线程与 JVM
+
+- 学习进程、线程、并发、并行、`Thread`、`Runnable`、`synchronized`、`volatile` 和线程池。
+- 学习竞态条件、死锁基础、JVM 内存区域、对象创建、类加载和垃圾回收基础。
+- 编写内存库存并发扣减实验，对比未加锁和加锁后的结果，并对应项目中的 MySQL 原子扣库存。
+- 验收为能够解释竞态条件、编写基础线程池任务，并说明堆、栈和垃圾回收的用途。
+
+### 第 3 周：Spring 原理与自动化测试
+
+- 学习 IOC、DI、Bean、Spring MVC 请求流程、Filter、Interceptor、AOP、事务传播和隔离级别。
+- 深化参数校验、统一异常、JUnit、Mockito、MockMvc、单元测试和集成测试。
+- 为订单 Controller 和 Service 补充正常及异常测试。
+- 项目全量测试从当前 17 个提升到至少 25 个。
+- 验收为能够独立完成一个小型 Service 改动和对应测试，并能根据错误定位 Controller、Service 或 Mapper。
+
+### 第 4 周：MySQL 与 Redis 深化
+
+- 学习 B+Tree、聚簇索引、联合索引、最左前缀、覆盖索引、回表和 `EXPLAIN`。
+- 学习事务隔离、行锁、间隙锁基础、JOIN、聚合、慢 SQL 与索引设计。
+- 学习 Redis 数据类型、缓存穿透、击穿、雪崩和缓存一致性。
+- 使用数据库迁移工具记录表结构变化，检查并补齐订单索引。
+- 在项目中实现一个真实的缓存异常治理方案，不能把“使用缓存”夸大为“已经解决缓存穿透”。
+
+### 第 5 周：RabbitMQ 与幂等
+
+- 学习 Producer、Exchange、Routing Key、Queue、Consumer、ACK、重试、死信队列和重复消费。
+- 在订单创建后发送异步通知消息，并使用业务唯一标识避免重复消费。
+- 验证消费者失败与重试场景，补充日志和测试。
+- 能够解释 MySQL 本地事务为什么不能天然保证数据库与 RabbitMQ 同时成功。
+
+### 第 6 周：微服务基础落地
+
+- 学习单体与微服务的区别，以及 Nacos、OpenFeign、Gateway、超时和 Fallback 的职责。
+- 从当前项目中拆出一个小型通知服务，通过 Nacos 注册，使用 Gateway 作为统一入口，并完成一次 OpenFeign 调用。
+- 使用 Docker Compose 启动整条调用链。
+- 验收为能够画出请求调用路线，并通过日志判断请求停止在哪一个服务。
+
+### 第 7 周：Linux、部署与工程能力
+
+- 学习 Linux 文件、进程、端口和日志命令，以及 Maven 生命周期、Git 分支和冲突基础。
+- 深化 Dockerfile、Docker Compose、Nginx 反向代理和 CI 基础。
+- 完成 Docker 一键启动、健康检查、GitHub Actions 自动测试、数据库初始化和部署说明。
+- 完善 README、接口文档和项目架构说明，使其他人能够根据文档启动项目。
+
+### 第 8 周：面试与投递准备
+
+- 集中训练 Java、JVM、并发、Spring、MySQL、Redis、MQ、微服务、项目问题和算法手写。
+- 累计完成约 40～50 道适合实习面试的算法题，其中至少 15 道能够隔天从空白重写。
+- 准备 10 分钟完整项目介绍和 3 分钟精简介绍。
+- 准备至少 50 个核心面试问题，并完成一页真实、可信、可以接受追问的简历。
+
+### 集中投递前验收条件
+
+1. 能在 45 分钟内独立完成一个小型后端需求。
+2. 能独立完成一道常见简单算法题。
+3. 能解释 Java、Spring、MySQL、Redis 和项目核心设计。
+4. 能根据日志独立定位常见启动或接口错误。
+5. 项目能够一键启动、测试并演示。
+6. 简历中的每一个技术点都能回答至少三个追问。
+
+### 执行原则
+
+- 每周最后一天进行一次验收；未通过的项目只补对应缺口，不整周重学。
+- 新技术必须经过“理解用途、阅读真实代码、自己修改、运行验证、能够讲解”后，才可以写入简历。
+- 计划用于提高竞争力，不代表完成后一定获得 Offer；实际投递时仍需根据岗位、届别、城市和实习时间进行筛选。
+
+## 2026-08-04：八周计划第 1 周第 1 天补充记录
+
+### Java 数组与字符串
+
+- 完成“删除有序数组中的重复项”，能够使用 `readIndex` 读取元素、使用 `writeIndex` 记录有效写入位置，并返回去重后的有效长度。
+- 完成“删除指定元素”，能够把不等于目标值的元素原地写到数组前部，并正确返回有效长度。
+- 从已有经验独立完成“移动零”核心代码：先把非零元素写到前部，再从 `writeIndex` 开始把剩余位置填成 0。
+- 完成“验证回文字符串”，使用左右双指针、`Character.isLetterOrDigit()` 和 `Character.toLowerCase()` 忽略标点、空格与大小写。
+- 已理解 `readIndex`、`writeIndex`、`left` 和 `right` 都是示例自行命名的变量，不是 Java 自带方法。
+
+### HashMap 字符映射
+
+- 完成“同构字符串”，使用两个 `Map<Character, Character>` 同时维护正向和反向映射。
+- 能理解两个 Map 分别保证“同一个原字符不能映射到不同字符”和“不同原字符不能映射到同一个字符”。
+- 四组输入 `egg/add`、`foo/bar`、`paper/title`、`ab/aa` 运行结果符合预期。
+- 时间复杂度为 `O(n)`，最坏空间复杂度为 `O(n)`。
+
+### Java 泛型
+
+- 学习泛型 `T` 的作用：它是方法声明的类型参数，用于让参数类型与返回类型保持一致，不是 Java 固定类型或普通变量。
+- 完成通用方法 `getFirst(List<T> items)`，能够同时处理 `List<String>` 和 `List<Integer>`。
+- 完成 `countOccurrences(List<T> items, T target)`，使用增强 `for` 和 `Objects.equals()` 统计任意类型目标元素的出现次数。
+- 能说明 `T`、`E`、`K`、`V` 是泛型命名习惯，并理解泛型使用对象类型，因此 `List<int>` 不合法、`List<Integer>` 合法。
+
+### Java IO 与异常
+
+- 使用 `Path.of()`、`Files.writeString()` 和 `Files.readString()` 完成字符串文件写入与读取。
+- 将 `throws IOException` 改为 `try-catch`，能够区分“把异常继续交给上层”和“在当前方法处理异常”。
+- 使用不存在的路径触发文件读取失败，控制台正确输出 `文件操作失败：missing-directory\\message.txt`，证明异常被 `catch` 处理。
+- 核对项目真实代码后，能区分 `IOException` 是受检异常，项目自定义 `BusinessException` 继承 `RuntimeException`，因此不强制写 `throws` 或 `try-catch`。
+- 理解 `GlobalExceptionHandler` 使用 Spring 的 `@RestControllerAdvice` 和 `@ExceptionHandler` 统一处理业务异常。
+- 完成商品库存文件练习：使用 `Files.write()` 写入多行数据、`Files.readAllLines()` 读取、`split(",")` 拆分，并使用 `Integer.parseInt()` 累加库存，运行结果为 `总库存：17`。
+
+### 本轮真实掌握判断
+
+- **已达到：** 能独立补全基础双指针、双向字符映射、简单泛型方法和文件库存累加核心代码，并完成运行验证。
+- **仍需巩固：** 新算法首次编写时容易遗漏指针移动后的流程控制；泛型和受检异常刚接触，当前能解释和使用基础模板，但还不能要求默写全部 IO API。
+- **学习路线调整：** 不再以“达到最低投递线”为目标，已建立八周竞争力提升计划；暂停深入前端，当前优先补 Java、并发/JVM、项目深度和计算机基础。
+
+### 下一次继续位置
+
+1. 处理商品文件中库存缺失、非数字或格式错误的输入，学习 `NumberFormatException` 与数据校验。
+2. 完成本周剩余字符串、集合和异常练习，继续要求从核心方法独立组织代码。
+3. 第 1 周结束时验收 10 道新题、至少 5 道从空白完成，并完成一个对象与集合综合小程序。
+
+## 2026-08-05：Java 异常、多线程、JVM 与并发扣库存集成测试
+
+### Java 文件数据校验
+
+- 在商品库存文件中把库存改为 `abc`，真实触发 `NumberFormatException`，能够从堆栈中的 `ProductFilePractice.java:29` 定位到自己的代码行。
+- 在逐行解析时使用 `try-catch` 捕获单行数字格式错误；坏数据被跳过，其他行继续累计，运行结果为“库存不是数字，跳过：显示器,abc”和“总库存：15”。
+- 能区分 `IOException` 负责文件读写错误，`NumberFormatException` 负责字符串无法转换成数字；二者不能使用同一个具体 `catch` 互相替代。
+
+### Java 多线程基础
+
+- 能区分 Process（进程）与 Thread（线程），并理解同一个后端进程会使用多个线程并发处理请求。
+- 运行两个 `Thread`，观察到输出顺序交错；将 `start()` 改成 `run()` 后，验证 `run()` 只是当前线程中的普通方法调用。
+- 使用 `join()` 等待两个工作线程执行结束后再读取最终结果。
+- 使用两个线程各执行一百万次 `count++`，实际得到 `1518341`，真实观察到共享变量的丢失更新。
+- 使用 `static synchronized` 后结果稳定为 `2000000`；使用 `AtomicInteger.incrementAndGet()` 后同样得到正确结果。
+- 使用 `Executors.newFixedThreadPool(2)` 让两个工作线程复用处理五个任务，理解 `submit()` 是把任务交给线程池执行。
+- 已理解 `volatile` 主要保证可见性，不能把 `count++` 变成原子操作；理解死锁是多个线程互相等待对方持有的资源。
+- 已接触 `ThreadLocal`：同一变量为每个线程保存独立数据；能够联系 Spring Security 当前请求认证信息理解其用途。
+
+### 真实 MySQL 并发集成测试
+
+- 新增 `ProductConcurrencyIT`，使用 `@SpringBootTest`、真实 `ProductMapper` 和 Docker MySQL，而不是 Mockito 模拟数据库结果。
+- 测试创建库存为 1 的临时商品，使用两个线程同时各扣减 1，最终验证成功更新次数为 1、库存为 0，并在 `finally` 中物理删除临时数据。
+- 能说明 `CountDownLatch` 的作用：先等待两个线程准备完成，再统一放行，以更接近同时请求的场景。
+- 能说明 `Callable<Integer>` 返回 SQL 影响行数，`Future.get()` 等待任务结束并取得结果，两次 `submit()` 模拟两个用户同时扣库存。
+- 已通过真实数据库验证：InnoDB 对同一行的并发更新进行控制，同时 `WHERE stock >= quantity` 执行业务条件判断；只有二者配合才能防止库存变为负数。
+- 能区分单元测试与集成测试：Mockito 单元测试验证 Service 逻辑和调用行为；本次集成测试验证 Spring、MyBatis-Plus、JDBC 与 MySQL 的真实协作。
+- 将类名从 `ProductConcurrencyIntegrationTest` 改为 `ProductConcurrencyIT`，避免普通 `mvn test` 自动运行数据库集成测试；使用 `mvn clean test` 清除旧 `.class` 后，普通测试构建成功。
+
+### JVM 与事务基础
+
+- 理解每个线程拥有独立栈，堆中的对象和类级共享数据可能被多个线程访问；判断线程安全的关键是多个线程是否修改同一份数据。
+- 理解 `synchronized` 实例方法锁当前对象，`static synchronized` 方法锁类对象；二者都只在当前 JVM 内有效，不能替代多实例下的数据库并发控制。
+- 理解堆、栈、GC、可回收对象和内存泄漏的基础含义；能够区分 `StackOverflowError` 与 `OutOfMemoryError` 的常见原因。
+- 能把 `.java → .class → .jar → JVM` 与 `javac`、`mvn package`、`java -jar` 联系起来。
+- 理解 Spring 默认事务传播 `REQUIRED`：已有事务时加入当前事务；订单保存失败时，库存和库存流水可以一起回滚。
+- 理解 `BusinessException` 继承 `RuntimeException`，默认可以触发事务回滚；异常被 `catch` 后不再抛出时，Spring 可能把方法视为正常结束并提交事务。
+
+### 本轮真实掌握判断
+
+- **已经实操通过：** 线程交替执行、`start()`/`run()`、`join()`、丢失更新、`synchronized`、`AtomicInteger`、固定线程池，以及连接真实 MySQL 的双线程库存扣减集成测试。
+- **能够解释但暂不能要求从空白默写：** `ExecutorService`、`Callable`、`Future`、`CountDownLatch`、`JdbcTemplate` 清理模板、`volatile`、`ThreadLocal` 和完整 Spring 集成测试结构。
+- **项目展示是否达标：** 达标。项目已有 CRUD、认证、Redis、订单、事务、Docker 和真实并发防超卖验证，可以作为简历项目展示。
+- **是否可以开始投递：** 已达到基础投递线；竞争力提升八周计划仍在进行。按当前用户选择暂不主动投递，用户明确提出开始投递时再进入岗位筛选和沟通阶段。
+- **是否达到稳定技术面水平：** 尚未。Java 并发和 JVM 刚完成第一轮，需要继续补算法独立编码、Spring 原理、MySQL/Redis 深化，并训练不看提示的项目表达与排错。
+
+### 下一学习日六小时安排
+
+1. **1.5 小时 Java/算法：** 从空白完成二分查找及一个字符串或 HashMap 题；每题运行至少 3 组输入并说明时间、空间复杂度。
+2. **1.5 小时并发/JVM：** 从空白重写一个双线程安全计数器；口头解释 `start()`、`run()`、`join()`、`synchronized`、`volatile`、堆和栈的区别。
+3. **2.5 小时项目实战：** 设计并运行一个真实订单事务回滚集成测试，验证订单保存失败时库存与库存流水不会留下不一致数据；测试必须自行清理临时记录。
+4. **0.5 小时复盘：** 根据真实日志区分缺少环境变量、账号密码错误、端口无服务和旧编译产物四类问题，并完成 Git 状态检查，不自动提交。
+
+## 2026-08-07：二分查找、线程安全复写与订单事务回滚验证
+
+### Java 与算法
+
+- 从空白写出二分查找：使用 `left`、`right` 和 `mid` 缩小有序数组的搜索范围，三组输出为 `3、0、-1`。
+- 能说明二分查找每轮排除约一半数据，时间复杂度为 `O(log n)`，额外空间复杂度为 `O(1)`。
+- 完成最长公共前缀：从第一个单词取得候选前缀，其他单词不匹配时使用 `substring()` 从末尾逐个缩短。
+- 补充空数组检查，并认识到健壮写法还应先判断 `words == null`。
+- 完成合并两个有序数组：从末尾比较并写入 `nums1`，避免覆盖尚未读取的数据；三组输入运行成功，复杂度为 `O(m+n)` 和 `O(1)`。
+- 完成最大子数组和：使用 `currentSum` 在“延续前一段”和“从当前元素重新开始”之间取较大值，再更新全局 `maxSum`；三组输入运行正确，复杂度为 `O(n)` 和 `O(1)`。
+
+### 并发复写验收
+
+- 从空白写出两个线程各执行一百万次累加的安全计数器。
+- 使用 `static synchronized` 保护共享的 `count++`，最终结果稳定为 `2000000`。
+- 能说明 `join()` 用于等待工作线程结束，`throws InterruptedException` 表示等待过程可能被中断。
+- 当前已能独立组织线程创建、启动、等待和同步累加的基础结构；线程池、`Future`、`CountDownLatch` 仍以理解和使用模板为主。
+
+### 真实订单事务回滚集成测试
+
+- 新增 `OrderTransactionRollbackIT`，连接真实 Spring、MyBatis-Plus 和 Docker MySQL。
+- 测试准备临时用户和库存为 5 的商品，使用 `@SpyBean` 与 Mockito 让订单 `insert()` 在最后一步故意抛出异常。
+- 验证异常发生后商品库存恢复为 5、库存流水数量为 0、订单数量为 0，证明库存扣减、流水和订单属于同一个事务。
+- 能说明默认事务传播 `REQUIRED`：`OrderService.createOrder()` 创建事务后，`ProductService.deductStock()` 加入同一个事务；SQL 已执行但尚未提交时仍可整体回滚。
+- 能区分单元测试与集成测试：前者使用 Mock 隔离依赖，后者连接多个真实组件和数据库验证协作结果。
+- 单独事务集成测试成功，随后执行普通 `mvn test`，全部单元测试通过。
+
+### Docker 数据库结构问题
+
+- 根据 Surefire 报告中的最底层 `Caused by`，先后定位数据库端口/密码错误和 `sys_order` 表缺失。
+- 实际检查 Docker `inventory` 数据库时只有 `product`、`stock_operation`、`sys_user` 三张表；手动补建 `sys_order` 后测试通过。
+- 理解 `/docker-entrypoint-initdb.d/` 中的初始化 SQL 只在 MySQL 数据卷首次初始化时执行；后来修改 `schema.sql` 不会自动升级已经存在的数据卷。
+- 当前练习项目采用“更新完整 `schema.sql` + 对现有数据库手动执行增量 SQL”的方式；后续可学习 Flyway 或 Liquibase 管理数据库版本。
+
+### Spring 与 MySQL 复盘
+
+- 能说明 `new` 出来的 Service 没有被 Spring IOC 容器接管，也没有事务代理，因此不能依赖 `@Transactional` 自动生效。
+- 能说明同类中的 `this.method()` 内部调用没有重新经过代理，方法上的独立事务增强可能不生效；事务入口通常放在 Service 的 `public` 方法上。
+- 能说明异常被 `catch` 后不再抛出时，Spring 可能把方法视为正常完成并提交；`BusinessException` 继承 `RuntimeException`，默认可以触发回滚。
+- 完成 6 条订单统计 SQL：条件聚合、商品销售汇总、`HAVING`、无有效订单商品、金额高于平均值的订单和按日期汇总。
+- 对条件聚合和 `LEFT JOIN ... IS NULL` 查询执行 `EXPLAIN`；能关注 `type`、`key`、`rows` 和 `Extra`，并理解小表出现 `ALL` 不代表必须增加索引。
+
+### 集成测试运行脚本
+
+- 新增 `scripts/run-integration-tests.ps1`，从被 Git 忽略的 `.env` 读取数据库密码，设置 Windows 连接 Docker MySQL 所需的 `localhost:3307`，然后运行两个真实数据库 IT。
+- 脚本运行成功，以后新开 PowerShell 后只需执行 `./scripts/run-integration-tests.ps1`，不再逐条设置临时环境变量。
+- 普通 `mvn test` 与两个数据库集成测试均已分别验证成功。
+
+### 本轮真实掌握判断
+
+- **已经实操通过：** 二分查找、最长公共前缀、安全计数器复写、真实订单事务回滚集成测试及全量单元测试。
+- **需要理解但无需默写：** `@SpyBean`、`doThrow()`、`JdbcTemplate` 和完整 Spring 集成测试模板。
+- **项目展示是否达标：** 达标。项目现在不仅实现事务，还能用真实数据库集成测试证明订单失败时库存和流水会回滚。
+- **是否可以开始投递：** 已达到基础投递门槛；按当前约定暂不主动投递，等学习者明确提出后再开始。
+- **是否达到稳定技术面水平：** 尚未完全达到。事务和并发项目表达明显改善，仍需继续补 MySQL、Spring 原理、算法独立编码和系统化排错。
+
+### 下一学习日六小时安排
+
+1. **1.5 小时 Java/算法：** 完成 2 道数组或字符串题，其中至少 1 道从空白写出；每题运行 3 组输入并说明复杂度。
+2. **1.5 小时 Spring：** 结合真实代码复盘 IOC、DI、AOP 代理和 `@Transactional` 生效条件，完成 5 个口头追问。
+3. **2 小时 MySQL：** 编写并执行 6 条包含 JOIN、GROUP BY、子查询或索引分析的 SQL，使用 `EXPLAIN` 解释至少 2 条。
+4. **1 小时项目工程：** 整理数据库增量 SQL 的使用说明，运行普通单元测试和两个真实数据库 IT，并根据日志独立判断失败层级。
+
+## 2026-08-08：算法复写、Spring MVC 请求链与订单测试
+
+### Java 与算法
+
+- 完成固定长度滑动窗口最大和：先计算前 `k` 个元素之和，窗口右移时加入新元素并减去离开窗口的元素，运行成功。
+- 再次从空白复写二分查找，修正了闭区间循环应使用 `left <= right`、找到目标应返回下标 `mid` 两个问题。
+- 复写最大子数组和时最初混淆 `currentSum` 和 `maxSum`，修正后理解“当前连续和”与“历史最大和”必须分别更新。
+
+### Spring MVC 与认证请求链
+
+- 结合实际项目代码梳理请求流程：Tomcat 接收 HTTP 请求，JWT 过滤器尝试认证，Spring Security 判断权限，`DispatcherServlet` 分发到 Controller，Controller 调用 Service，Service 通过 Mapper 访问 MySQL，最后返回 JSON。
+- 理解 `SecurityContextHolder` 保存当前请求的认证信息，Controller 中的 `Authentication` 可以从中取得用户名。
+- 理解 `filterChain.doFilter()` 的作用是把请求继续交给过滤器链；缺少 JWT 时过滤器本身不一定直接抛异常，而是后续访问受保护接口时由 Spring Security 返回 401。
+- 能区分 401 的两个来源：进入 Spring MVC 前由 Security 产生的未认证响应，以及 Service 抛出 `BusinessException(401)` 后由全局异常处理转换的响应。
+
+### 订单 Service 单元测试
+
+- 补充并运行订单取消成功、订单不存在、订单不属于当前用户、并发情况下订单状态已变化四类测试。
+- 进一步理解单元测试的四段结构：`when()` 准备 Mock 行为，调用真实 `orderService` 方法，`assert` 检查结果或异常，`verify` 检查依赖方法是否被调用。
+- 修正了把 `assertEquals()` 当作调用验证、在 `assertThrows()` 中直接调用 Mapper、以及 Mock 的订单 ID 与 Service 查询 ID 不一致等问题。
+- 普通测试共 21 个通过；随后两个真实数据库集成测试也通过，结果为 `Tests run: 2, Failures: 0, Errors: 0, Skipped: 0` 和 `BUILD SUCCESS`。
+
+### 集成测试一键脚本
+
+- 修复 `scripts/run-integration-tests.ps1`，脚本现在会切换到项目目录、从 `.env` 读取数据库密码、设置 Docker MySQL 的连接信息、启动 MySQL，并运行两个集成测试。
+- 中文错误字符串曾因文件编码损坏为乱码，导致 PowerShell 把后面的 Maven 参数误判为语法错误；脚本已改为纯 ASCII 提示并通过 PowerShell 语法解析检查。
+- Docker Desktop 未启动时，`docker compose` 无法连接 `dockerDesktopLinuxEngine`；启动 Docker Desktop 后重新执行同一脚本，两个集成测试全部成功。
+
+### 本轮真实掌握判断
+
+- **已经实操通过：** 滑动窗口、二分查找、最大子数组和修正、四类订单取消单元测试、两个真实数据库集成测试。
+- **仍需加强：** 目前能看懂并修改 Mockito 测试，但从业务分支独立决定“准备什么数据、Mock 哪些依赖、断言和验证什么”仍不稳定。
+- **项目展示是否达标：** 达标。项目同时具备单元测试、并发防超卖集成测试和事务回滚集成测试证据。
+- **是否可以开始投递：** 已达到基础投递门槛；继续遵守当前暂不投递的决定，等学习者主动提出时再开始。
+- **是否达到稳定技术面水平：** 尚未完全达到。需要继续训练测试设计、Spring 请求链复述和不依赖提示的算法实现。
+
+### 下一学习日六小时安排
+
+1. **1.5 小时 Java/算法：** 从空白完成 2 道数组或字符串题，每题运行 3 组输入并说明复杂度。
+2. **1.5 小时 Spring：** 不看笔记复述一次完整 HTTP 请求链，并结合项目指出 JWT 过滤器、Security、Controller 和全局异常处理的位置。
+3. **2 小时测试设计：** 先用中文为订单创建或取消列出 3 个业务场景，再独立写出其中 2 个 Mockito 测试，重点训练 Given-When-Then。
+4. **1 小时项目工程：** 分别运行普通测试和集成测试脚本，根据输出判断是代码失败、数据库未启动还是环境配置失败。
+
+## 2026-08-10：Flyway、Redis 缓存穿透、日志排错与 Controller 测试
+
+### Flyway 数据库版本管理
+
+- 项目已经接入 Flyway 10.20.1 和 `flyway-mysql`，通过 `V1__init_schema.sql` 初始化数据库结构。
+- Docker 日志已验证：Flyway 创建 `flyway_schema_history`、成功执行 V1；再次启动显示 `Schema is up to date. No migration necessary.`，说明迁移已执行且数据库版本最新。
+- 能解释 `flyway_schema_history` 用于保存迁移版本、描述和执行结果。
+- 能说明已经执行的 V1 不应继续修改；新增字段应创建 `V2__add_product_description.sql`，避免新旧数据库结构不一致。
+- 能按“启动日志 → `flyway_schema_history` → 文件目录和命名 → SQL 内容”的顺序排查 V2 未执行问题。
+- 已处理 Navicat 连接 Docker MySQL 时的端口和密码问题，理解修改 `.env` 不会自动修改已有 MySQL 数据卷中的账号密码。
+
+### Redis 缓存穿透处理
+
+- 在真实 `ProductService.getProductById()` 中加入短期空值标记：不存在商品首次查询 MySQL 后写入 `product:not-found:{id}`，有效期 5 分钟。
+- 后续查询先检查 Redis 标记；标记存在时直接返回 404，不再重复访问 MySQL。
+- 创建、批量创建和恢复商品后清除对应空值标记，避免商品已经存在但旧标记仍造成错误 404。
+- 使用 Mockito 测试验证“标记存在时不调用 Mapper”和“首次不存在时写入带 TTL 的标记”；`ProductServiceTest` 7 个测试通过。
+- Docker 中真实验证 `GET` 返回标记值、`TTL` 约为 290 秒，并通过日志确认重复查询只有第一次访问 MySQL。
+- **真实掌握程度：** 已能解释完整业务流程和标记清理原因；嵌套 Mock、`StringRedisTemplate` 固定 API 仍允许参考模板，不要求从空白默写。
+
+### JVM、并发与事务补充
+
+- 能区分栈、堆、元空间、对象引用、类初始化和 GC 的基础作用。
+- 能说明 `volatile` 主要解决可见性，`AtomicInteger` 可完成单 JVM 中的原子计数，但二者不能替代数据库原子 SQL 和事务。
+- 结合 `ProductConcurrencyIT` 理解 `readyLatch` 等待两个线程就绪、`startLatch` 同时放行、`Future.get()` 等待并取得 SQL 影响行数；线程 A、B 的先后顺序不固定。
+- 结合真实订单代码理解默认事务传播 `REQUIRED`：订单、库存和库存流水加入同一事务；运行时异常向外抛出时一起回滚。
+
+### 后端日志排错
+
+- 能区分 `Failures` 是断言结果不符合预期，`Errors` 是测试执行过程中发生异常，`Skipped` 是测试未执行。
+- 遇到 `BUILD FAILURE` 时会向上寻找异常类型和最底层 `Caused by`，不再只根据 Maven 最后一行修改代码。
+- 能判断 `BadSqlGrammarException` 通常需要检查具体 SQL、表字段、实际连接数据库和 Flyway 记录。
+- 能判断 `Connection refused: localhost:6379` 属于 Redis 服务状态或连接地址问题；Windows 运行使用 `localhost:6380`，Docker 容器运行使用 `redis:6379`。
+
+### 测试分层与 Controller 测试
+
+- 能区分三类验证：Mockito 单元测试验证 Service 业务分支，MockMvc Controller 测试验证 HTTP/JSON/参数校验，真实数据库 IT 验证 SQL、锁和事务。
+- 能根据业务执行路线决定测试数据：经过且需要返回值的依赖使用 `when()`；结果使用 `assert`；不应执行的依赖使用 `verify(..., never())` 或 `verifyNoInteractions()`。
+- 结合真实 `ProductControllerTest` 理解 `@WebMvcTest`、`MockMvc`、`@MockBean` 和 `addFilters = false` 的用途；这些固定框架配置允许查资料和复制。
+- 独立完成库存概览 Controller 测试：模拟 `InventoryOverviewVO`，发送 `GET /api/products/overview`，验证响应 JSON 和 Service 调用。
+- 实际运行结果：`ProductControllerTest` 共 3 个测试，Failures 0、Errors 0，`BUILD SUCCESS`。
+
+### 本轮真实掌握判断
+
+- **已经实操通过：** Flyway V1 执行与重复启动检查、Redis 不存在商品短期标记、Redis TTL/日志验证、Controller 返回数据测试。
+- **已经能够解释：** Flyway 为什么新增 V2、缓存穿透流程、单元测试/Controller 测试/集成测试区别、常见构建日志的第一层分类。
+- **仍需加强：** 从完全空白设计复杂 Mockito 测试仍不稳定；Flyway 目前只完成 V1 和 V2 命名练习，尚未在主项目实际执行新的 V2；复杂 MockMvc Security/JWT 测试暂不要求。
+- **项目展示是否达标：** 达标。项目已有认证、缓存、并发防超卖、订单事务、Flyway、Docker、单元测试和真实数据库集成测试证据。
+- **是否可以开始投递：** 已达到 Java 后端基础投递门槛；继续遵守当前“暂不投递”的决定，学习者明确开始投递时再执行岗位筛选与沟通。
+- **是否达到稳定技术面水平：** 尚未完全达到。项目主线较完整，但 Java/算法独立编码、测试场景设计和不看提示的项目表达还需继续稳定。
+
+### 下一学习日六小时安排
+
+1. **1.5 小时 Java/算法：** 从空白完成 2 道新题，其中至少 1 道使用前缀和、滑动窗口或 HashMap；每题运行 3 组输入并说明复杂度。
+2. **1.5 小时测试设计：** 先为一个 Service 方法画执行路线，再独立列出成功、参数非法、数据不存在 3 个场景；从空白完成其中 1 个 Mockito 测试。
+3. **1.5 小时 MySQL/Flyway：** 新建临时练习 V2，执行一次字段变更并查询 `flyway_schema_history`；确认成功后说明为什么不能修改 V1。
+4. **1 小时项目复盘：** 不看笔记完整讲解订单创建、并发防超卖、事务回滚、Redis 缓存和 Flyway 五条主线。
+5. **0.5 小时工程验证：** 运行普通单元测试和集成测试脚本，根据日志独立判断失败属于断言、代码异常、数据库或 Docker 环境中的哪一层。

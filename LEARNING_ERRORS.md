@@ -1151,3 +1151,427 @@ new BigDecimal("100.00")
 - 一个测试方法尽量只验证一个规则。
 - 测试后面的校验分支时，测试数据必须先通过前面的所有校验。
 - `assertThrows()` 捕获到异常并不代表测试目标正确，还要断言异常码和消息，确认命中了预期分支。
+
+### 63. `@WebMvcTest` 缺少 JWT 依赖导致上下文启动失败
+
+**场景：** 新建 `ProductControllerTest` 后出现 `Failed to load ApplicationContext`，最底层原因为 `JwtAuthenticationFilter` 找不到 `JwtTokenProvider`。
+
+**修正：** 在 Controller 测试中增加 `@MockBean JwtTokenProvider`。本次测试使用 `addFilters=false` 关闭 Security 过滤器，只验证 Controller、参数校验和响应，不需要创建真实 JWT Provider。
+
+**规律：** 阅读 Spring 启动失败时应继续找到最后一层 `Caused by`；`Failed to load ApplicationContext` 只是表面结果，缺少哪个 Bean 才是实际原因。
+
+### 64. Mapper 新 SQL 已写好，但 Service 仍调用旧逻辑
+
+**场景：** 库存概览接口已增加单条聚合 SQL，但请求后 MyBatis 日志仍显示 4 次数据库查询。
+
+**原因：** `ProductMapper.selectInventoryOverview()` 已存在，但 `ProductService.getInventoryOverview()` 仍分别调用 4 个旧统计方法，新 Mapper 方法从未被调用。
+
+**修正：** Service 改为直接返回 `productMapper.selectInventoryOverview()`；重启后通过日志确认只执行一条统计 SQL。
+
+**规律：** 新代码存在不代表运行路径会经过它。优化是否生效应同时检查调用链、运行日志和接口结果。
+
+### 65. Maven 增量编译结果异常导致主类无法访问
+
+**场景：** `testCompile` 报告 `ProductVO` 找不到、`OrderService.class` 出现 `NoSuchFileException`，但对应源码实际存在。
+
+**修正：** 保存文件、停止正在运行的测试，执行 `mvn clean test` 删除 `target` 后从头编译，构建恢复成功。
+
+**规律：** 源码存在且包名正确，但错误指向 `target/classes` 中的旧类或缺失类时，优先怀疑增量编译产物；正常测试使用 `mvn test`，缓存异常时才使用 `mvn clean test`。
+
+### 66. 商品下架枚举状态码误写为订单取消状态码
+
+**场景：** 创建 `ProductStatus` 时把 `OFF_SALE` 写成 `2`，混入了订单状态“已取消”的编码。
+
+**修正：** 根据商品业务规则改为 `OFF_SALE(0, "下架")`，并通过测试和商品查询验证 `statusText` 正确。
+
+**规律：** 枚举消除了散落的魔法数字，但枚举定义本身仍必须与数据库真实编码一致；创建枚举时应先核对表字段约定和现有接口数据。
+
+### 67. 两套 Docker Compose 项目使用相同宿主机端口
+
+**场景：** 启动 `springboot-practice` 后，`8081` 和 `9000` 无法访问，Compose 启动过程提示：
+
+```text
+Bind for 0.0.0.0:6380 failed: port is already allocated
+```
+
+**原因：** `inventory-order-system` 的容器已经占用了宿主机的 `8080`、`3307` 和 `6380`，而 `springboot-practice` 也配置了相同端口。一个宿主机端口同一时间只能被一个容器或程序绑定。
+
+**处理：** 暂时停止库存项目的 `inventory-app`、`inventory-mysql`、`inventory-redis` 容器，再启动微服务项目。只停止容器，没有删除容器和数据卷。
+
+**规律：**
+
+- 接口完全无法连接时，先用 `docker compose ps` 和端口检查确认服务是否真正运行。
+- 出现 `port is already allocated` 时先查占用者，不要反复重启。
+- 两套本地项目可以修改宿主机端口错开，也可以学习其中一套时先停止另一套。
+
+### 68. MySQL 容器运行但没有加入 Compose 网络
+
+**场景：** 注册接口返回 500；主服务日志最底层出现：
+
+```text
+java.net.UnknownHostException: mysql
+```
+
+**原因：** 主服务容器位于 `springboot-practice_default` 网络，但旧 MySQL 容器的网络列表为空。主服务因此无法把 `mysql` 解析成 MySQL 容器地址。
+
+**处理：** 使用 Compose 重新创建 MySQL、Redis、主服务和 Gateway 容器。MySQL 数据保存在命名数据卷中，重建容器没有删除数据。重建后 MySQL 加入同一网络，并获得 `mysql` 网络别名。
+
+**规律：**
+
+- 容器显示 `Up` 只说明进程在运行，不等于容器间一定可以通信。
+- `UnknownHostException: mysql` 重点检查 Docker 网络和服务别名，不是先修改 Java SQL。
+- `docker inspect` 可查看容器连接的网络；同一 Compose 网络中的服务可以用服务名互相访问。
+- 排错要找到最后一层 `Caused by`；接口的 500 只是结果，`UnknownHostException` 才是本次根因。
+
+### 69. 混淆 Gateway、OpenFeign、Nacos 与返回链路
+
+**场景：** 复述微服务请求时，最初认为 Gateway 会直接调用 OpenFeign，并认为通知服务结果会先返回 Gateway；同时把 Nacos 误读成其他名称。
+
+**正确关系：**
+
+```text
+请求：Postman -> Gateway -> 主服务 -> OpenFeign -> 通知服务
+返回：通知服务 -> 主服务 -> Gateway -> Postman
+```
+
+- Gateway 负责接收外部请求并把请求转发给主服务。
+- 主服务中的 Controller 才会调用 OpenFeign 接口。
+- OpenFeign 负责向通知服务发送 HTTP 请求。
+- Nacos 只提供“服务名对应的实际地址”，不是业务结果返回链路的一层。
+- 通知服务由主服务调用，因此结果必须先回到主服务中的 `result`，再逐层返回。
+
+**规律：**
+
+- 判断返回方向时使用“谁调用，结果先返回给谁”。
+- 阅读微服务调用链时先只画运行程序和端口，再补 Gateway、OpenFeign、Nacos 等框架角色。
+- 不应只背组件定义，必须在真实代码中找到 Gateway 路由、Controller 调用和 Feign Client 三个位置。
+
+### 70. RabbitMQ 只会复述概念但尚未对应代码
+
+**场景：** 能说出“生产者、交换机、队列、消费者”，但主动指出自己还没有看懂项目中的实现代码。
+
+**处理：** 回到真实 `TaskNotificationProducer`、`TaskNotificationConsumer` 和 `RabbitConfig`，把概念逐一对应到：
+
+```text
+RabbitTemplate.convertAndSend() -> 生产者发送
+TopicExchange                 -> 交换机路由
+Binding + Routing Key         -> 交换机与队列的匹配规则
+Queue                         -> 保存消息
+@RabbitListener               -> 消费者监听并自动执行
+```
+
+**规律：**
+
+- 框架学习先建立概念，但不能以“知道流程”作为结束；还要读懂项目中的入口代码和核心 API。
+- Producer 和 Consumer 当前要求能读懂、能在提示下编写；RabbitConfig 的固定构建 API 可以查资料，不要求默写。
+- 看到日志中的生产者发送和消费者处理，只能证明链路运行成功；能解释代码如何触发才算开始理解。
+
+### 71. 混淆数据库事务、MQ 发送失败与接口重试
+
+**场景：** 最初把“订单数据库操作需要共同回滚”和“通知发送失败是否回滚订单”混在一起，没有先区分核心数据和辅助通知，也没有意识到接口返回 500 时数据库可能已经写入成功。
+
+**真实代码证据：** `springboot-practice` 的 `TaskService.createTask()` 当前先执行 `taskMapper.insert(task)`，再调用 `sendTaskCreatedMessage()`，并且方法没有 `@Transactional`。因此 MQ 发送抛出异常时，任务可能已经保存；用户重试可能再次插入任务。
+
+**正确区分：**
+
+- 扣库存、库存记录、订单保存属于同一数据库核心业务，应一起成功或回滚。
+- 邮件、短信和普通通知属于辅助业务，失败不应取消已经成功的订单，通常记录失败并重试。
+- 普通 `@Transactional` 默认管理数据库事务，不能自动把 MySQL 和 RabbitMQ 变成一个绝对同时成功的事务。
+- 同一请求或消息可能重复到达，生产端和消费端都需要根据业务唯一标识考虑幂等。
+
+**规律：**
+
+- 接口返回失败不等于数据库一定没有变化，重试前要考虑请求是否已经产生结果。
+- 分析事务时先列出所有操作，再划分“核心数据操作”和“可异步辅助操作”。
+- 当前阶段掌握风险和基本幂等思路即可；本地消息表、事务消息等复杂方案暂不要求实现。
+
+### 72. SQL 关联字段和异常筛选运算符选择错误
+
+**场景一：** 使用 `NOT EXISTS` 查询没有有效订单的商品时写成 `o.id = p.id`，把订单主键与商品主键直接比较，导致实际存在有效订单的商品仍被错误返回。
+
+**修正：** 订单与商品的业务关联字段是 `sys_order.product_id`，正确条件为：
+
+```sql
+o.product_id = p.id
+```
+
+**场景二：** 检查库存流水计算错误时使用 `after_stock = ...`，实际查询出了计算正确的数据；需求是找异常记录，应使用不等于：
+
+```sql
+after_stock <> before_stock + quantity
+after_stock <> before_stock - quantity
+```
+
+**规律：**
+
+- 写 JOIN 或相关子查询前，先用中文说清两个字段各自代表什么；同样叫 `id` 不代表可以直接关联。
+- 把需求中的“符合规则”翻译成 `=`，把“不符合、异常、不一致”翻译成 `<>`。
+- 数据质量检查正常返回空集是合理结果，不要为了看到数据而把判断方向写反。
+
+### 73. 创建订单异常测试使用了错误 Mapper 和状态码
+
+**场景：** 编写“商品不存在”测试时，把商品查询配置成 `sysOrderMapper.selectById(999999L)`，并断言状态码 400。
+
+**修正：** `OrderService.createOrder()` 根据商品 ID 调用的是：
+
+```java
+productMapper.selectById(request.getProductId())
+```
+
+因此测试应配置 `productMapper.selectById(999999L)` 返回 `null`，并断言 404“商品不存在”。
+
+**规律：**
+
+- `ProductMapper` 操作商品，`SysOrderMapper` 操作订单，`SysUserMapper` 操作用户；写 Mock 前先沿真实 Service 调用链确认被调用对象。
+- 400 表示请求参数本身不合法；合法 ID 查询不到对应资源通常使用 404。
+- `when(...).thenReturn(...)` 只是预设 Mock 行为，真正触发它的是后续 `orderService.createOrder()` 中的 Mapper 调用。
+
+### 74. 把 `when()` 误解为读取参数
+
+**场景：** 项目复盘时把 Mockito 的 `when()` 解释为“读取参数”。
+
+**修正：** `when(mock.method(...)).thenReturn(value)` 是为 Mock 对象预设行为：以后 Service 调用这个模拟方法时，直接返回指定值，不会访问真实数据库。
+
+**规律：**
+
+- `when()` 准备依赖行为，`assertEquals()` 检查结果，`verify()` 检查依赖调用。
+- 判断测试代码作用时，先区分“准备数据”“真正执行 Service”“结果断言”“行为验证”。
+
+### 75. 混淆容器数据库与 Windows 本地数据库
+
+**场景：** Docker 项目运行正常，但按本地数据库中常用的商品 ID 4 请求时返回 404，容易误判为 JWT、Redis 或接口故障。
+
+**真实原因：** 容器中的 MySQL 使用独立端口和数据卷，与 Windows 本地 MySQL 不是同一份数据；本次容器数据库中的有效商品 ID 是 1。
+
+**规律：**
+
+- 接口返回“商品不存在”时，先确认应用当前连接的是哪一个 MySQL，再核对该数据库中的真实 ID。
+- `localhost:3307` 是 Windows 访问容器 MySQL 的映射端口；容器之间使用服务名和容器端口 3306。
+- 不要仅凭 Navicat 中看到的数据推断 Docker 应用一定能读取到相同记录。
+
+### 76. 缓存功能不等于解决缓存穿透
+
+**场景：** 项目已经使用 `@Cacheable`，容易把“有 Redis 缓存”表述成“解决了缓存穿透”。
+
+**真实代码证据：** 当前配置为 `spring.cache.redis.cache-null-values=false`。查询不存在的商品时方法抛出 404，不会把空结果写入 Redis；重复请求同一个不存在 ID 仍会反复访问 MySQL。
+
+**规律：**
+
+- 当前项目可以表述为“实现商品查询缓存及修改后的缓存失效”。
+- 在没有空值缓存、布隆过滤器等实际方案前，不能在简历或面试中声称已经解决缓存穿透。
+## 2026-08-03 补充：缓存与测试概念
+
+### 1. 把“没有缓存空值”误认为解决了缓存穿透
+
+- **错误理解：** 商品不存在时返回 404，因此认为不存在的商品不会造成缓存穿透。
+- **真实情况：** 当前配置 `spring.cache.redis.cache-null-values=false`，空结果不会写入 Redis；同一个不存在 ID 被重复请求时，每次仍会访问 MySQL。
+- **正确结论：** 当前项目实现了商品缓存和修改后失效，但没有完整解决缓存穿透，简历和面试不能夸大。
+
+### 2. 把 Mockito 的 `when()` 理解成读取参数
+
+- **错误理解：** `when()` 用来读取传入的参数。
+- **正确理解：** `when(mock.method(...)).thenReturn(value)` 是预设 Mock 对象的行为；以后 Service 调用这个模拟方法时，Mockito 返回预先指定的值，不会访问真实数据库。
+- **快速区分：** `when` 安排依赖，`assert` 检查结果，`verify` 检查调用行为。
+
+### 3. Docker 数据与本地数据混淆
+
+- **现象：** 以前常用的商品 ID `4` 在容器接口中返回 404。
+- **原因：** Docker MySQL 使用自己的数据卷，与 Windows 本地 MySQL 不是同一个数据库实例；容器数据库当前可用商品 ID 是 `1`。
+- **排查顺序：** 先确认应用连接的是哪个 MySQL，再查询该数据库中的真实 ID，不要仅凭本地 Navicat 中的数据判断。
+## 2026-08-04 补充：前端存储、数据库结构与事务锁
+
+### 1. `sessionStorage.setItem()` 放在错误位置
+
+- **错误写法：** 页面加载时读取 `authToken` 后立即把它重新写入 `sessionStorage`，但登录成功取得新 Token 后没有保存。
+- **后果：** 第一次加载保存的是空字符串，刷新页面仍无法恢复新登录状态。
+- **正确位置：** 文件开始只调用 `getItem()`；登录成功并给 `authToken` 赋值后，再调用 `setItem()`。
+
+### 2. 登录状态初始化代码重复
+
+- `if (authToken !== "")` 被写了两次，功能不会立刻出错，但属于重复逻辑。
+- 初始化页面登录状态只需要执行一次；401 时还需要同时清空内存变量并调用 `sessionStorage.removeItem()`。
+
+### 3. 只修改 `schema.sql`，误以为旧数据库会自动增加索引
+
+- **现象：** `schema.sql` 声明了 `idx_order_user_id`，但 `SHOW INDEX FROM sys_order` 只显示主键。
+- **原因：** Docker 数据卷中的表早已存在，`CREATE TABLE IF NOT EXISTS` 不会修改旧表结构。
+- **修复：** 使用 `ALTER TABLE ... ADD INDEX ...` 修改实际数据库；长期项目应通过 Flyway 或 Liquibase 记录数据库迁移。
+
+### 4. 误以为事务回滚后行锁不会释放
+
+- **错误回答：** 订单保存异常后库存回滚为原值，但行锁不会释放。
+- **正确结论：** 事务无论提交还是回滚，结束时都会释放它持有的锁；否则其他事务会永久等待。
+- **正确流程：** 扣库存成功 → 保存订单异常 → 回滚库存和流水 → 释放行锁 → 等待中的请求继续执行。
+
+### 5. 前端文件处于 `AM` 状态
+
+- `AM` 表示文件已经进入暂存区，但暂存之后又继续被修改。
+- 这不是代码运行错误；准备提交时需要重新执行 `git add frontend`，才能把最新内容放入暂存区。
+
+## 2026-08-05 补充：文件解析、集成测试配置与 Maven 旧产物
+
+### 1. 把非数字库存直接交给 `Integer.parseInt()`
+
+- **现象：** `Integer.parseInt("abc")` 抛出 `NumberFormatException`，堆栈最后指向 `ProductFilePractice.java:29`。
+- **原因：** `abc` 不是合法整数；原来的 `catch (IOException)` 只处理文件读写异常，不能捕获这个数字格式异常。
+- **修复：** 在逐行处理内部捕获 `NumberFormatException`，输出坏数据并 `continue`，保证一条错误记录不会终止整个文件。
+- **规律：** 读堆栈先找异常类型和第一条属于自己源文件的行，不从 `java.base` 内部调用开始排查。
+
+### 2. 集成测试文件物理目录与 `package` 不一致
+
+- **现象：** 文件最初位于 `src/test/java/mapper`，但声明为 `package com.example.inventorypractice.mapper;`。
+- **修复：** 使用 IDEA `Refactor → Move` 将文件移动到 `src/test/java/com/example/inventorypractice/mapper`。
+- **规律：** Java 文件目录应与 `package` 层级对应；移动包优先使用 IDEA Refactor，避免只改一边。
+
+### 3. `@SpringBootTest` 启动失败时只看最外层错误
+
+- **现象：** 最上层显示 `Failed to load ApplicationContext`，实际最底层是 `Could not resolve placeholder 'JWT_SECRET'`。
+- **原因：** 集成测试会启动完整 Spring 上下文；即使只测试 Mapper，Security 和 `JwtTokenProvider` 也需要创建。
+- **修复：** 复用已有测试中的测试用 `app.jwt.secret` 属性，不使用生产密钥。
+- **规律：** `Failed to load ApplicationContext` 只是汇总结果，应沿 `Caused by` 向下查找最底层根因。
+
+### 4. IDEA 环境变量被错误填成一整行
+
+- **现象：** 配置后仍连接默认数据库，并出现 `Access denied for user 'root'@'localhost'`。
+- **真实原因：** 把 `DB_URL`、URL、`DB_USERNAME` 和 `DB_PASSWORD` 全部填进一个 Name；IDEA 因此只创建了一个名称错误的环境变量。
+- **修复：** 在 Environment Variables 表格中分别创建 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD` 三行，Name 列只放变量名，Value 列放对应值。
+- **规律：** 环境变量不是命令文本；表格模式必须一行一个变量，不使用空格把多组名称和值串联起来。
+
+### 5. 把“密码拒绝”和“连接拒绝”混为一类
+
+- `Access denied` 表示已经连接到某个 MySQL，但用户名或密码不被接受；本次还暴露出测试可能落到了默认 `localhost:3306`。
+- `Connection refused` 表示目标地址和端口没有服务接收连接；本次检查发现 Compose 容器列表为空，`localhost:3307` 没有 MySQL。
+- **修复顺序：** 先确认 `DB_URL`，再用 `docker compose ps` 确认 MySQL 是否 `healthy`，最后核对用户名和密码。
+
+### 6. 重命名测试后旧测试仍被 Maven 执行
+
+- **现象：** 源文件已经改为 `ProductConcurrencyIT.java`，但 `mvn test` 仍运行旧的 `ProductConcurrencyIntegrationTest`。
+- **原因：** `target/test-classes` 同时残留旧、新两个 `.class` 文件；普通 `mvn test` 不会主动删除旧编译产物。
+- **修复：** 执行 `mvn clean test`，先删除 `target`，再重新编译和运行普通测试。
+- **规律：** 源文件重命名后出现旧类名、旧行为或重复测试，优先检查 `target` 等生成目录；`clean` 删除的是可重新生成的构建产物，不会删除 `src` 源码。
+
+## 2026-08-04 补充：Java 流程控制与异常分类
+
+### 1. 指针写入后遗漏位置更新
+
+- **场景：** 删除指定元素时能够把 `nums[readIndex]` 写入 `nums[writeIndex]`，但首次遗漏 `writeIndex++`。
+- **后果：** 后续所有有效元素会继续覆盖同一个数组位置，返回的有效长度也不会增长。
+- **规律：** 使用写指针时，每成功写入一个有效元素，就检查写指针是否应移动到下一个位置。
+
+### 2. 跳过无效字符后仍继续执行本轮比较
+
+- **场景：** 回文判断中遇到空格或标点后执行 `left++` 或 `right--`，但没有 `continue`，随后仍执行字符比较。
+- **后果：** 连续标点或新位置尚未验证时可能产生错误比较。
+- **规律：** 指针移动后若需要从头重新验证新位置，应立即 `continue`；不要机械移动后继续使用未经检查的新字符。
+
+### 3. 受检异常与运行时异常的区别
+
+- `IOException` 是受检异常，Java 编译器要求使用 `try-catch` 或在方法上声明 `throws`。
+- 项目的 `BusinessException` 继承 `RuntimeException`，属于运行时异常，编译器不强制当场处理；异常会向外传播并由 `GlobalExceptionHandler` 转换成 HTTP 响应。
+- **规律：** 是否必须捕获主要由异常继承体系决定，不是看到所有 `Exception` 都必须写 `try-catch`。
+
+## 2026-08-07 补充：事务集成测试的数据库连接与旧表结构
+
+### 1. 只看 `MyBatisSystemException`，无法判断真实原因
+
+- **现象：** Maven 只汇总显示 `OrderTransactionRollbackIT... MyBatisSystem`，最初无法判断是哪段代码出错。
+- **排查：** 打开 `target/surefire-reports` 中对应报告，从上往下找到最后一层 `Caused by`。
+- **规律：** `MyBatisSystemException`、`Failed to load ApplicationContext` 等通常是外层包装；真正原因常在最底层数据库异常、连接异常或配置异常中。
+
+### 2. 本地测试连接了错误端口或使用了错误密码
+
+- **第一次根因：** `Access denied for user 'root'@'localhost'`，测试落到默认 `localhost:3306`，而 Docker MySQL 映射到 Windows 的端口是 `3307`。
+- **第二次根因：** 修正端口后出现 `root@172.19.0.1` 的密码拒绝，说明已经到达 Docker MySQL，但传入密码仍不正确。
+- **修复：** 设置 `DB_URL` 为 Windows 侧 `localhost:3307`，并从项目 `.env` 读取 `DB_PASSWORD`，避免把说明文字或错误值当作密码。
+- **判断方法：** `Connection refused` 是端口没有服务；`Access denied` 是已经找到 MySQL但身份验证失败。
+
+### 3. `schema.sql` 已有订单表，但旧 Docker 数据库没有
+
+- **现象：** 测试清理阶段执行 `DELETE FROM sys_order ...` 时出现 `BadSqlGrammarException`。
+- **真实根因：** 最底层异常为 `Table 'inventory.sys_order' doesn't exist`，并不是 `DELETE` 语法写错。
+- **证据：** 实际 `SHOW TABLES` 只有 `product`、`stock_operation` 和 `sys_user`。
+- **原因：** MySQL 数据卷第一次创建后一直复用；后来添加到 `schema.sql` 的 `sys_order` 不会通过 `/docker-entrypoint-initdb.d/` 自动补到旧数据库中。
+- **修复：** 对现有数据库手动执行 `CREATE TABLE IF NOT EXISTS sys_order ...`，同时保留完整 `schema.sql` 供新环境初始化。
+- **长期方案：** 使用增量 SQL，并在后续学习 Flyway 或 Liquibase；不要为了补一张表随意使用 `docker compose down -v` 删除全部数据库数据。
+
+### 4. 测试在 `finally` 清理失败会掩盖原测试结果
+
+- **现象：** 事务断言可能已经执行完成，但 `finally` 中删除不存在的 `sys_order` 表再次抛异常，Maven 最终仍报告测试错误。
+- **规律：** 集成测试的准备、断言和清理任意一步抛异常，整项测试都会失败；看到清理代码行号时，应检查数据库结构和清理 SQL，而不是只检查业务断言。
+
+### 5. 新开 PowerShell 后集成测试再次连接默认数据库
+
+- **现象：** 两个 IT 单独运行成功后，合并运行又同时在第一次数据库写入时报 `Access denied for user 'root'@'localhost'`。
+- **原因：** `$env:...` 只在当前 PowerShell 会话有效；新开终端后 `DB_URL` 消失，Spring 回退到配置中的默认 `localhost:3306`。
+- **修复：** 新增 `scripts/run-integration-tests.ps1`，每次自动从 `.env` 读取密码并设置 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD` 后再运行测试。
+- **安全要求：** 脚本只能读取 `.env`，不能把真实密码写进脚本；`.env` 已在 `.gitignore` 中。
+
+### 6. 条件聚合查询连续遗漏字段分隔逗号
+
+- **现象：** `SELECT` 中的 `created_orders`、`cancelled_orders`、`sold_quantity` 等表达式逻辑正确，但相邻字段之间漏写英文逗号。
+- **规律：** `SELECT` 返回多个字段或计算表达式时，除最后一个字段外，每一项末尾都需要英文逗号；新增统计列后应从上到下检查分隔符。
+- **本质判断：** 本次属于 SQL 标点错误，不是 `CASE`、`COUNT` 或 `SUM` 的思路错误。
+
+## 2026-08-08 补充：Mockito 测试设计与 PowerShell 集成测试脚本
+
+### 1. 用 `assertEquals()` 代替 Mockito 的调用验证
+
+- **错误写法：** 为了验证取消 SQL 和退库存方法被调用，直接再次执行 Mock 方法并对返回值使用 `assertEquals()`。
+- **问题：** 这会产生一次新的调用，并不能证明 `OrderService` 执行期间调用过依赖。
+- **正确做法：** 使用 `verify(sysOrderMapper).cancelOrder(...)` 和 `verify(productService).addStock(...)` 检查真实 Service 调用链中的行为。
+- **规律：** `assert` 检查返回结果或异常；`verify` 检查 Mock 方法是否被调用，两者不能互相替代。
+
+### 2. 在 `assertThrows()` 中调用 Mapper，而不是被测试的 Service
+
+- **错误写法：** 测试订单状态变化时，在 `assertThrows()` 中调用 `sysOrderMapper.cancelOrder()`。
+- **问题：** Mock Mapper 默认只返回 `0`，不会执行 Service 中“影响行数为 0 就抛出业务异常”的判断。
+- **正确做法：** 先用 `when(...).thenReturn(0)` 配置 Mapper，再在 `assertThrows()` 中调用 `orderService.cancelOrder()`。
+- **规律：** 单元测试必须调用真正要验证的业务方法；Mock 只是为该方法准备依赖行为。
+
+### 3. PowerShell 中文字符串乱码破坏脚本语法
+
+- **现象：** `throw` 后的中文提示变成乱码并丢失结束双引号，随后 `-Dtest` 被报告为意外标记，同时出现缺少 `}` 和字符串终止符等连锁错误。
+- **真实原因：** Windows PowerShell 读取脚本时的字符编码与文件编码不一致；后面的 Maven 行不是根因。
+- **修复：** 将脚本运行提示改为 ASCII 英文，并使用 PowerShell Parser 在运行前检查语法。
+- **规律：** 同一批多个解析错误应先修复最早出现的“字符串未结束”；后续括号、参数错误往往只是连锁反应。
+
+### 4. Docker Desktop 未运行导致脚本无法取得 MySQL 镜像
+
+- **现象：** `failed to connect to the docker API`，并提示找不到 `dockerDesktopLinuxEngine` 管道。
+- **原因：** Docker 命令已安装，但 Docker Desktop 的 Linux Engine 尚未运行；安装了 CLI 不等于 Docker 后台服务正在运行。
+- **修复：** 启动 Docker Desktop，等待 Engine 就绪，再运行 `./scripts/run-integration-tests.ps1`。
+- **判断：** 这不是 Maven、MySQL 密码或 Java 测试失败；请求尚未到达容器和测试阶段。
+
+## 2026-08-10 补充：Flyway、缓存与 Controller 测试
+
+### 1. Flyway 迁移文件名只写一个下划线
+
+- **练习写法：** `V2_add_product_description.sql`。
+- **问题：** Flyway 版本迁移的标准命名需要版本和描述之间使用两个下划线。
+- **正确写法：** `V2__add_product_description.sql`。
+- **规律：** 文件名结构为 `V版本__描述.sql`；迁移未被发现时先检查目录和双下划线，不要直接怀疑 SQL。
+
+### 2. 认为修改 `.env` 会自动修改已有 MySQL 密码
+
+- **现象：** 修改 `.env` 中 `DB_PASSWORD` 后，Navicat 连接 Docker MySQL仍然出现 `Access denied`。
+- **原因：** `.env` 只为容器提供配置；已有 MySQL 数据卷已经初始化过，修改环境变量不会自动重设数据库内部账号密码。
+- **规律：** 区分“容器启动配置”和“数据库中已保存的真实账号状态”；修改密码后必须在 MySQL 内同步修改，或在明确允许丢弃数据时重新初始化数据卷。
+
+### 3. 把 JSON 数字当成字符串断言
+
+- **原写法：** `jsonPath("$.data.onSaleStockValue").value("990.00")`。
+- **问题：** `BigDecimal` 默认序列化为 JSON 数字 `990.00`，不是带双引号的字符串。
+- **修正：** 使用 `.value(990.00)`；修改后 `ProductControllerTest` 3 个测试全部通过。
+- **规律：** 写 JSON 断言前先确认字段类型；数字、布尔值和字符串的断言值不能混用。
+
+### 4. 看到 `BUILD FAILURE` 直接修改最靠近的测试代码
+
+- **问题：** `BUILD FAILURE` 只是 Maven 的最终汇总，不能说明是断言、编译、数据库还是环境失败。
+- **正确排查：** 先看 `Failures` 和 `Errors`，再向上找具体测试与异常类型，最后沿 `Caused by` 找到底层根因。
+- **规律：** `Failures` 优先检查断言；`Errors` 优先检查运行异常、连接、Spring 上下文和 SQL；不要只根据最后一行猜原因。
+
+### 5. Mockito 测试先写 `when()`，没有先看业务执行路线
+
+- **问题：** 容易为根本不会执行的依赖准备数据，或遗漏方法真正会先调用的依赖，导致测试提前在错误分支结束。
+- **正确方法：** 先用中文写出“输入 → 参数校验 → 查询用户 → 查询商品 → 扣库存 → 保存订单”，再决定 `when`、`assert` 和 `verify`。
+- **规律：** 经过且需要返回值的依赖写 `when()`；最终结果写 `assert`；不应执行的依赖写 `verify(..., never())`。
