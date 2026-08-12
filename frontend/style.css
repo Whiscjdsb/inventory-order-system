@@ -1,0 +1,37 @@
+input {
+    width: 180px;
+    padding: 10px;
+    border: 1px solid #dcdfe6;
+    border-radius: 4px;
+}
+
+button {
+    padding: 10px 18px;
+    border: none;
+    border-radius: 4px;
+    background-color: #409eff;
+    color: white;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: #66b1ff;
+}
+
+#result {
+    width: 320px;
+    margin-top: 20px;
+    padding: 20px;
+    border-radius: 8px;
+    background-color: white;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+}
+
+.product-item {
+    padding: 12px 0;
+    border-bottom: 1px solid #ebeef5;
+}
+
+.product-item:last-child {
+    border-bottom: none;
+}

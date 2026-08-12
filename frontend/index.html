@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>库存订单管理系统</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<h1>库存订单管理系统</h1>
+<p>这是库存商品查询页面</p>
+<h2>用户登录</h2>
+
+<label for="username">用户名：</label>
+<input id="username" type="text">
+
+<label for="password">密码：</label>
+<input id="password" type="password">
+
+<button id="loginButton">登录</button>
+<button id="logoutButton">退出登录</button>
+<p id="loginResult">尚未登录</p>
+
+<h2>新增商品</h2>
+
+<label for="productName">商品名称：</label>
+<input id="productName" type="text">
+
+<label for="productPrice">商品价格：</label>
+<input id="productPrice" type="number" step="0.01">
+
+<label for="productStock">初始库存：</label>
+<input id="productStock" type="number" value="0">
+
+<button id="createButton">新增商品</button>
+<p id="createResult"></p>
+
+<h2>商品查询</h2>
+
+<label for="productId">商品 ID：</label>
+<input id="productId" type="number" value="1">
+<button id="queryButton">查询商品</button>
+<button id="listButton">显示全部</button>
+
+<div id="result">等待查询</div>
+
+<script src="app.js"></script>
+</body>
+</html>
