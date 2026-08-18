@@ -1,5 +1,6 @@
 package com.example.inventorypractice.service;
 
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.inventorypractice.dto.CreateOrderRequest;
 import com.example.inventorypractice.entity.Product;
 import com.example.inventorypractice.entity.SysOrder;
@@ -9,6 +10,7 @@ import com.example.inventorypractice.mapper.ProductMapper;
 import com.example.inventorypractice.mapper.SysOrderMapper;
 import com.example.inventorypractice.mapper.SysUserMapper;
 import com.example.inventorypractice.vo.OrderVO;
+import com.example.inventorypractice.vo.PageResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -16,6 +18,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -399,6 +402,83 @@ class OrderServiceTest {
         verifyNoInteractions(
                 sysUserMapper,
                 sysOrderMapper,
+                productMapper,
+                productService
+        );
+    }
+    @Test
+    void shouldGetMyOrdersSuccessfully() {
+        SysUser user = new SysUser();
+        user.setId(1L);
+        user.setUsername("backend_intern");
+
+        SysOrder order = new SysOrder();
+        order.setId(10L);
+        order.setUserId(1L);
+        order.setProductId(4L);
+        order.setQuantity(2);
+        order.setUnitPrice(new BigDecimal("100.00"));
+        order.setTotalPrice(new BigDecimal("200.00"));
+        order.setStatus(1);
+
+        Page<SysOrder> orderPage = new Page<>(1, 10);
+        orderPage.setRecords(List.of(order));
+        orderPage.setTotal(1);
+
+        when(sysUserMapper.selectOne(any()))
+                .thenReturn(user);
+
+        when(sysOrderMapper.selectPage(any(Page.class), any()))
+                .thenReturn(orderPage);
+
+
+        PageResult<OrderVO> result = orderService.getMyOrders(
+                "backend_intern",
+                1,
+                10
+        );
+
+        assertEquals(1L, result.getTotal());
+        assertEquals(1L, result.getCurrent());
+        assertEquals(10L, result.getSize());
+        assertEquals(1, result.getRecords().size());
+        assertEquals(10L, result.getRecords().get(0).getId());
+        assertEquals(
+                "已创建",
+                result.getRecords().get(0).getStatusText()
+        );
+    }
+
+    @Test
+    void shouldReturnEmptyPageWhenUserHasNoOrders() {
+        SysUser user = new SysUser();
+        user.setId(1L);
+        user.setUsername("backend_intern");
+
+
+        Page<SysOrder> orderPage = new Page<>(1, 10);
+        orderPage.setRecords(List.of());
+        orderPage.setTotal(0);
+
+        when(sysUserMapper.selectOne(any()))
+                .thenReturn(user);
+
+        when(sysOrderMapper.selectPage(any(Page.class), any()))
+                .thenReturn(orderPage);
+
+        PageResult<OrderVO> result = orderService.getMyOrders(
+                "backend_intern",
+                1,
+                10
+        );
+
+        assertEquals(0L, result.getTotal());
+        assertEquals(1L, result.getCurrent());
+        assertEquals(10L, result.getSize());
+        assertEquals(0, result.getRecords().size());
+
+
+        verifyNoInteractions(
                 productMapper,
                 productService
         );
