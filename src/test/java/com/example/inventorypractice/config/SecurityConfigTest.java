@@ -27,6 +27,7 @@ class SecurityConfigTest {
 
     @Test
     void shouldReturnJsonWhenUserIsUnauthenticated() throws Exception {
+        // 不携带 Token 访问管理员接口，应由认证入口返回统一 401 JSON。
         mockMvc.perform(get("/api/admin/ping"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value(401))
@@ -38,6 +39,7 @@ class SecurityConfigTest {
     void shouldReturnJsonWhenUserHasInsufficientPermission() throws Exception {
         String token = "user-token";
 
+        // 模拟一个有效的 USER Token：身份有效，但没有 ADMIN 权限。
         when(jwtTokenProvider.validateToken(token)).thenReturn(true);
         when(jwtTokenProvider.getUsername(token)).thenReturn("backend_intern");
         when(jwtTokenProvider.getRole(token)).thenReturn("USER");

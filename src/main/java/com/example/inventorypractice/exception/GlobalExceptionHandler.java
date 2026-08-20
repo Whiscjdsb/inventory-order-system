@@ -1,7 +1,5 @@
 package com.example.inventorypractice.exception;
 
-// 自己添加 import
-
 import com.example.inventorypractice.common.ApiResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,15 +19,19 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleBusinessException(
             BusinessException exception) {
 
-        // 返回真实 HTTP 状态码
+        // 业务异常的 code 和 message 是后端主动定义的，可以安全地返回给前端。
         return ResponseEntity.status(exception.getCode())
-        // Body 使用 ApiResponse.error(...)
-        .body(ApiResponse.error(exception.getCode(), exception.getMessage()));
+                .body(ApiResponse.error(
+                        exception.getCode(),
+                        exception.getMessage()
+                ));
     }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Void>> handleValidationException(
             MethodArgumentNotValidException exception) {
 
+        // 当前接口一次返回第一个字段错误，避免前端收到 Spring 默认的复杂异常结构。
         FieldError fieldError =
                 exception.getBindingResult().getFieldError();
 
@@ -45,8 +47,10 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleUnexpectedException(
             Exception exception) {
+        // 服务端日志保留完整异常栈，便于开发人员定位真实根因。
         log.error("未处理的服务器异常", exception);
 
+        // 前端只接收通用提示，不能暴露 SQL、路径、密码等内部异常细节。
         return ResponseEntity
                 .internalServerError()
                 .body(ApiResponse.error(500, "服务器内部错误"));

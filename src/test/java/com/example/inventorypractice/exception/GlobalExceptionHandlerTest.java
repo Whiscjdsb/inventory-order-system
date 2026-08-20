@@ -16,6 +16,7 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void shouldHideUnexpectedExceptionDetails() {
+        // 原始异常包含敏感内容，用它验证响应体不会把内部细节返回给前端。
         ResponseEntity<ApiResponse<Void>> response =
                 exceptionHandler.handleUnexpectedException(
                         new RuntimeException("database password leaked")
