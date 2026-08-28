@@ -1,0 +1,1 @@
+ALTER TABLE product ADD COLUMN remark varchar(255) NULL;

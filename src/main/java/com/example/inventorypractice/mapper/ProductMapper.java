@@ -68,4 +68,18 @@ public interface ProductMapper extends BaseMapper<Product> {
         """)
     InventoryOverviewVO selectInventoryOverview();
 
+
+    @Update("""
+            UPDATE product
+            SET name = #{name},
+                price = #{price},
+                update_time = CURRENT_TIMESTAMP
+            WHERE id = #{id}
+              AND is_deleted = 0
+            """)
+    int updateProductInfo(
+            @Param("id") Long id,
+            @Param("name") String name,
+            @Param("price") BigDecimal price
+    );
 }

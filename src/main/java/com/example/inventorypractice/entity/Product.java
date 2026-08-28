@@ -24,5 +24,4 @@ public class Product {
     private Integer isDeleted;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
-
 }

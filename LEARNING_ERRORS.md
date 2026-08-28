@@ -199,6 +199,7 @@ Windows → Docker Redis：localhost:6380
 ```
 
 容器之间通过服务名通信，不使用 Windows 的映射端口。
+- IDEA 开发可能连本机 MySQL（`localhost:3306`，MySQL 8.0），Docker app 容器连 3307（MySQL 8.4）。看启动日志 Flyway `Database: jdbc:mysql://localhost:3306...` 那行可确认实际连的是哪个库。
 
 ### 条件和关联字段写错
 
@@ -226,6 +227,9 @@ Windows → Docker Redis：localhost:6380
 - `checksum mismatch` 表示历史中记录的脚本与当前文件内容不一致。
 - `FlywayMigrateException` 只是外层错误，要继续查看真正失败的 SQL。
 - 修改 `.env` 的 MySQL 密码不会自动改变已有 Volume 中数据库账号的密码。
+- 迁移文件必须带 `.sql` 扩展名，否则 Flyway 直接忽略；日志会显示 `up to date. No migration necessary`，但该版本实际没跑。
+- 撤销已执行的迁移只能新建反向版本（如 V4 `DROP COLUMN`）；删除已执行的 V3 文件会触发 missing/checksum mismatch。
+- 应用返回 200 不等于数据库一致：Entity 删字段后 SELECT 不再查该列，孤儿列残留也不报错。迁移类修复必须同时验证表结构 + `flyway_schema_history`，不能只看 HTTP。
 
 ### 索引判断
 

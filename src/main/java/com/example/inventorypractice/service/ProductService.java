@@ -105,11 +105,18 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
         if (product == null) {
             throw new BusinessException(404, "商品不存在");
         }
-        product.setName(request.getName());
-        product.setPrice(request.getPrice());
-        product.setStock(request.getStock());
-        product.setUpdateTime(LocalDateTime.now());
-        productMapper.updateById(product);
+        int affectedRows = productMapper.updateProductInfo(
+                id,
+                request.getName(),
+                request.getPrice()
+        );
+
+        if (affectedRows == 0) {
+            throw new BusinessException(
+                    409,
+                    "商品状态已变化，请重试"
+            );
+        }
         Product updatedProduct = productMapper.selectById(id);
         return ProductVO.fromEntity(updatedProduct);
     }

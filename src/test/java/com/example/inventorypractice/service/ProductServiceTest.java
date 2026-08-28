@@ -1,5 +1,6 @@
 package com.example.inventorypractice.service;
 
+import com.example.inventorypractice.dto.UpdateProductRequest;
 import com.example.inventorypractice.entity.Product;
 import com.example.inventorypractice.exception.BusinessException;
 import com.example.inventorypractice.mapper.ProductMapper;
@@ -42,6 +43,74 @@ class ProductServiceTest {
 
     @Mock
     private ValueOperations<String, String> valueOperations;
+
+    @Test
+    void shouldKeepStockWhenUpdatingProductInformation() {
+        Product existingProduct = new Product();
+        existingProduct.setId(4L);
+        existingProduct.setName("旧商品名称");
+        existingProduct.setPrice(new BigDecimal("100.00"));
+        existingProduct.setStock(8);
+
+        Product updatedProduct = new Product();
+        updatedProduct.setId(4L);
+        updatedProduct.setName("新商品名称");
+        updatedProduct.setPrice(new BigDecimal("120.00"));
+        updatedProduct.setStock(8);
+
+        UpdateProductRequest request = new UpdateProductRequest();
+        request.setName("新商品名称");
+        request.setPrice(new BigDecimal("120.00"));
+
+        when(productMapper.selectById(4L))
+                .thenReturn(existingProduct, updatedProduct);
+        when(productMapper.updateProductInfo(
+                4L,
+                "新商品名称",
+                new BigDecimal("120.00")
+        )).thenReturn(1);
+
+        ProductVO result = productService.updateProduct(4L, request);
+
+        assertEquals("新商品名称", result.getName());
+        assertEquals(new BigDecimal("120.00"), result.getPrice());
+        assertEquals(8, result.getStock());
+        verify(productMapper).updateProductInfo(
+                4L,
+                "新商品名称",
+                new BigDecimal("120.00")
+        );
+        verify(productMapper, never()).updateById(any(Product.class));
+    }
+
+    @Test
+    void shouldRejectProductInformationUpdateWhenStateHasChanged() {
+        Product existingProduct = new Product();
+        existingProduct.setId(4L);
+        existingProduct.setStock(8);
+
+        UpdateProductRequest request = new UpdateProductRequest();
+        request.setName("新商品名称");
+        request.setPrice(new BigDecimal("120.00"));
+
+        when(productMapper.selectById(4L))
+                .thenReturn(existingProduct);
+        when(productMapper.updateProductInfo(
+                4L,
+                "新商品名称",
+                new BigDecimal("120.00")
+        )).thenReturn(0);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> productService.updateProduct(4L, request)
+        );
+
+        assertEquals(409, exception.getCode());
+        assertEquals("商品状态已变化，请重试", exception.getMessage());
+        verify(productMapper, times(1)).selectById(4L);
+        verify(productMapper, never()).updateById(any(Product.class));
+    }
 
     @Test
     void shouldReturnOutOfStockProducts() {
