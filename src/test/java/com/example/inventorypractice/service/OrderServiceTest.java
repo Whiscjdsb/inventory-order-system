@@ -483,4 +483,48 @@ class OrderServiceTest {
                 productService
         );
     }
+      @Test
+    void shouldReturnThreeOrdersOnFirstPage() {
+        SysUser user = new SysUser();
+        user.setId(1L);
+        user.setUsername("backend_intern");
+
+        SysOrder order1 = new SysOrder();
+        order1.setId(1L);
+        order1.setUserId(1L);
+        order1.setStatus(1);
+        order1.setQuantity(1);
+        order1.setUnitPrice(new BigDecimal("7999"));
+        order1.setTotalPrice(new BigDecimal("7999"));
+
+        SysOrder order2 = new SysOrder();
+        order2.setId(2L);
+        order2.setUserId(1L);
+        order2.setStatus(1);
+        order2.setQuantity(2);
+        order2.setUnitPrice(new BigDecimal("99"));
+        order2.setTotalPrice(new BigDecimal("198"));
+
+        SysOrder order3 = new SysOrder();
+        order3.setId(3L);
+        order3.setUserId(1L);
+        order3.setStatus(1);
+        order3.setQuantity(1);
+        order3.setUnitPrice(new BigDecimal("50"));
+        order3.setTotalPrice(new BigDecimal("50"));
+
+        Page<SysOrder> orderPage = new Page<>(1, 10);
+        orderPage.setRecords(List.of(order1, order2, order3));
+        orderPage.setTotal(3);
+
+        when(sysUserMapper.selectOne(any())).thenReturn(user);
+        when(sysOrderMapper.selectPage(any(Page.class), any())).thenReturn(orderPage);
+
+        PageResult<OrderVO> result = orderService.getMyOrders("backend_intern", 1, 10);
+
+        assertEquals(3L, result.getTotal());
+        assertEquals(3, result.getRecords().size());
+        assertEquals(1L, result.getCurrent());
+        assertEquals(10L, result.getSize());
+    }
 }
