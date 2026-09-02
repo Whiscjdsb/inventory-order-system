@@ -30,6 +30,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Service
 public class ProductService extends ServiceImpl <ProductMapper, Product>{
@@ -312,11 +313,9 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
 
         // 先查是否存在（如果所有商品都存在才删，否则直接抛异常）
         List<Product> products = productMapper.selectBatchIds(ids);
-
-        Set<Long> existingIds = new  HashSet<>();
-        for(Product product : products) {
-            existingIds.add(product.getId());
-        }
+        Set<Long> existingIds = products.stream()
+                .map(Product::getId)
+                .collect(Collectors.toSet());
         for (Long id : ids) {
             if (!existingIds.contains(id))
             {
