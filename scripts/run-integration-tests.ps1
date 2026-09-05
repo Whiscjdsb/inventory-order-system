@@ -16,12 +16,15 @@ if ([string]::IsNullOrWhiteSpace($passwordLine)) {
 
 $env:DB_PASSWORD = ($passwordLine -replace '^DB_PASSWORD=', '').Trim()
 
-docker compose up -d --wait mysql
+docker compose up -d --wait mysql redis
 
 if ($LASTEXITCODE -ne 0) {
-    throw "Failed to start Docker MySQL. Start Docker Desktop and try again."
+    throw "Failed to start Docker MySQL/Redis. Start Docker Desktop and try again."
 }
 
-mvn "-Dtest=ProductConcurrencyIT,OrderTransactionRollbackIT" test
+$env:REDIS_HOST = "localhost"
+$env:REDIS_PORT = "6380"
+
+mvn "-Dtest=ProductConcurrencyIT,OrderTransactionRollbackIT,ProductCacheConcurrencyIT" test
 
 exit $LASTEXITCODE
