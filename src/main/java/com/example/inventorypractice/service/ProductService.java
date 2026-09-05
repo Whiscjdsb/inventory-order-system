@@ -1,5 +1,7 @@
 package com.example.inventorypractice.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.core.assist.ISqlRunner;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -40,23 +42,38 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
     private static final String MISSING_PRODUCT_KEY_PREFIX =
             "product:not-found:";
 
-    private final StringRedisTemplate stringRedisTemplate;
+    private static final String LOCK_KEY_PREFIX = "product:lock:";
+    private static final long LOCK_EXPIRE_SECONDS = 10;
 
+    private static final String PRODUCT_CACHE_KEY_PREFIX = "product:id:";
+    private static final long PRODUCT_CACHE_TTL_MINUTES = 30;
+
+    private final StringRedisTemplate stringRedisTemplate;
+    private final ObjectMapper objectMapper;
 
     public ProductService(
             ProductMapper productMapper,
             StockOperationService stockOperationService,
             StockOperationMapper stockOperationMapper,
-            StringRedisTemplate stringRedisTemplate
+            StringRedisTemplate stringRedisTemplate,
+            ObjectMapper objectMapper
     ) {
         this.productMapper = productMapper;
         this.stockOperationService = stockOperationService;
         this.stockOperationMapper = stockOperationMapper;
         this.stringRedisTemplate = stringRedisTemplate;
+        this.objectMapper = objectMapper;
     }
     private void clearMissingProductMarker(Long id) {
         stringRedisTemplate.delete(
                 MISSING_PRODUCT_KEY_PREFIX + id
+        );
+    }
+
+    // 商品数据变化后，删掉手动缓存 key，避免读到旧的缓存值
+    private void evictProductCache(Long id) {
+        stringRedisTemplate.delete(
+                PRODUCT_CACHE_KEY_PREFIX + id
         );
     }
 
@@ -74,19 +91,79 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
         clearMissingProductMarker(product.getId());
         return ProductVO.fromEntity(product);
     }
-    @Cacheable(cacheNames = "productById", key = "#id")
     public ProductVO getProductById(Long id) {
         String missingKey =
                 MISSING_PRODUCT_KEY_PREFIX + id;
+        String cacheKey =
+                PRODUCT_CACHE_KEY_PREFIX + id;
 
+        // 第 1 关：缓存穿透——商品不存在，空标记直接拦截
         if (Boolean.TRUE.equals(
                 stringRedisTemplate.hasKey(missingKey)
         )) {
             throw new BusinessException(404, "商品不存在");
         }
 
-        Product product = productMapper.selectById(id);
+        // 第 2 关：缓存命中，直接返回，不查数据库
+        ProductVO cached = readCache(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
 
+        // 第 3 关：缓存未命中——抢锁，只放一个请求去查库
+        String lockKey = LOCK_KEY_PREFIX + id;
+        Boolean locked = stringRedisTemplate.opsForValue()
+                .setIfAbsent(
+                        lockKey,
+                        "1",
+                        LOCK_EXPIRE_SECONDS,
+                        TimeUnit.SECONDS
+                );
+
+        if (Boolean.TRUE.equals(locked)) {
+            try {
+                // 双检：抢到锁后再看一次缓存（可能别人已回填），避免重复查库
+                ProductVO recheck = readCache(cacheKey);
+                if (recheck != null) {
+                    return recheck;
+                }
+
+                Product product = productMapper.selectById(id);
+
+                if (product == null) {
+                    stringRedisTemplate.opsForValue().set(
+                            missingKey,
+                            "1",
+                            5,
+                            TimeUnit.MINUTES
+                    );
+
+                    throw new BusinessException(404, "商品不存在");
+                }
+
+                ProductVO vo = ProductVO.fromEntity(product);
+                writeCache(cacheKey, vo);
+                return vo;
+            } finally {
+                stringRedisTemplate.delete(lockKey);
+            }
+        }
+
+        // 没抢到锁：别人正在查库。等 50ms 后去看缓存，不重复查库
+        try {
+            Thread.sleep(50);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(e);
+        }
+
+        ProductVO cachedAfterWait = readCache(cacheKey);
+        if (cachedAfterWait != null) {
+            return cachedAfterWait;
+        }
+
+        // 菜单还没有（极端情况）→ 才去查数据库兜底
+        Product product = productMapper.selectById(id);
         if (product == null) {
             stringRedisTemplate.opsForValue().set(
                     missingKey,
@@ -94,13 +171,37 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
                     5,
                     TimeUnit.MINUTES
             );
-
             throw new BusinessException(404, "商品不存在");
         }
-
         return ProductVO.fromEntity(product);
     }
-    @CacheEvict(cacheNames = "productById",key = "#id")
+
+    private ProductVO readCache(String cacheKey) {
+        String json = stringRedisTemplate.opsForValue().get(cacheKey);
+        if (json == null) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, ProductVO.class);
+        } catch (JsonProcessingException e) {
+            // 缓存里是脏数据，忽略，当作未命中重新查库
+            return null;
+        }
+    }
+
+    private void writeCache(String cacheKey, ProductVO vo) {
+        try {
+            String json = objectMapper.writeValueAsString(vo);
+            stringRedisTemplate.opsForValue().set(
+                    cacheKey,
+                    json,
+                    PRODUCT_CACHE_TTL_MINUTES,
+                    TimeUnit.MINUTES
+            );
+        } catch (JsonProcessingException e) {
+            // 序列化失败时不写缓存，不影响查库结果
+        }
+    }
     public ProductVO updateProduct(Long id, UpdateProductRequest request) {
         Product product = productMapper.selectById(id);
         if (product == null) {
@@ -119,15 +220,16 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
             );
         }
         Product updatedProduct = productMapper.selectById(id);
+        evictProductCache(id);
         return ProductVO.fromEntity(updatedProduct);
     }
-    @CacheEvict(cacheNames = "productById",key = "#id")
     public void  deleteProduct(Long id){
         Product product = productMapper.selectById(id);
         if(product == null){
             throw new BusinessException(404, "商品不存在");
         }
         productMapper.deleteById(id);
+        evictProductCache(id);
     }
     public List<ProductVO> getProductList(String name){
         LambdaQueryWrapper<Product> queryWrapper = new LambdaQueryWrapper<>();
@@ -161,7 +263,6 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
         return productPage.convert(ProductVO::fromEntity);
     }
     @Transactional
-    @CacheEvict(cacheNames = "productById", key = "#productId")
     public void deductStock(Long productId, Integer quantity) {
         if (productId == null || productId < 1){
             throw new BusinessException(400, "商品ID必须大于等于1");
@@ -191,11 +292,11 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
                 afterStock + quantity;
 
         stockOperationService.recordOperation(productId, 2, quantity, beforeStock, afterStock);
+        evictProductCache(productId);
 
     }
 
     @Transactional
-    @CacheEvict(cacheNames = "productById", key = "#productId")
     public ProductVO addStock(Long productId, Integer quantity){
         if (productId == null || productId < 1){
             throw new BusinessException(400, "商品ID必须大于等于1");
@@ -216,9 +317,9 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
         Integer beforeStock = afterStock - quantity;
 
         stockOperationService.recordOperation(productId, 1, quantity, beforeStock, afterStock);
+        evictProductCache(productId);
         return ProductVO.fromEntity(updatedProduct);
     }
-    @CacheEvict(cacheNames = "productById",key = "#id")
     public ProductVO updateProductStatus(Long id, Integer status){
         Product product = productMapper.selectById(id);
         if (product == null){
@@ -228,6 +329,7 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
         product.setUpdateTime(LocalDateTime.now());
         productMapper.updateById(product);
         Product updatedProduct = productMapper.selectById(id);
+        evictProductCache(id);
         return ProductVO.fromEntity(updatedProduct);
     }
 
@@ -296,7 +398,6 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
         List<Product> products = productMapper.selectList(queryWrapper);
         return products.stream().map(ProductVO::fromEntity).toList();
     }
-    @CacheEvict(cacheNames = "productById", allEntries = true)
     public void deleteProducts(List<Long> ids) {
         if (ids == null || ids.isEmpty()) {
             throw new BusinessException(400, "删除的ID列表不能为空");
@@ -325,6 +426,9 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
 
         // 批量删除
         productMapper.deleteBatchIds(ids);
+        for (Long id : ids) {
+            evictProductCache(id);
+        }
 
     }
     @Transactional
@@ -379,7 +483,6 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
         return products.stream().map(ProductVO::fromEntity).toList();
     }
 
-    @CacheEvict(cacheNames = "productById",key = "#id")
     public ProductVO restoreProduct(Long id) {
         if (id == null || id < 1) {
             throw new BusinessException(400, "商品ID必须大于等于1");
@@ -390,6 +493,7 @@ public class ProductService extends ServiceImpl <ProductMapper, Product>{
         }
 
         clearMissingProductMarker(id);
+        evictProductCache(id);
 
         Product product = productMapper.selectById(id);
         return ProductVO.fromEntity(product);
