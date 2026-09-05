@@ -5,14 +5,25 @@
 ## 核心能力
 
 - 商品增删改查、逻辑删除、恢复、上下架、筛选、分页和库存概览。
+
 - 原子增加与扣减库存，并记录入库、出库流水。
+
 - 用户注册、BCrypt 密码加密、JWT 登录认证和角色权限控制。
+
 - 创建订单、分页查询本人订单、原子取消订单并退回库存。
+
 - 使用事务保证订单、库存和库存流水的一致性。
+
 - 使用带条件的原子 `UPDATE` 和 MySQL 行锁防止并发超卖。
-- 使用 Redis 缓存商品查询，并为不存在商品设置短期标记缓解缓存穿透。
+
+- 使用 Redis 手动缓存商品查询，并为不存在商品设置短期标记缓解缓存穿透。
+
+- 使用 Redis 分布式锁（`setIfAbsent`）防止热点商品缓存过期时并发击穿数据库。
+
 - 使用 Flyway 管理数据库结构版本和订单索引。
+
 - 提供统一响应、参数校验、业务异常处理、Swagger 和健康检查。
+
 - 提供 Mockito 单元测试、MockMvc Controller 测试、并发与事务回滚集成测试。
 
 ## 系统结构
@@ -54,15 +65,15 @@ JWT 取得当前用户
 
 ## 技术栈
 
-| 分类 | 技术 |
-| --- | --- |
-| 基础 | Java 17、Maven |
-| Web | Spring Boot 3.2.5、Spring MVC、Jakarta Validation |
-| 数据访问 | MyBatis-Plus 3.5.5、MySQL 8、Flyway 10.20.1 |
-| 安全 | Spring Security、JJWT 0.13.0、BCrypt |
-| 缓存 | Spring Cache、Redis |
-| 测试 | JUnit 5、Mockito、MockMvc、真实 MySQL 集成测试 |
-| 工程 | Docker、Docker Compose、Swagger / OpenAPI、Actuator、Git |
+| 分类   | 技术                                                     |
+| ---- | ------------------------------------------------------ |
+| 基础   | Java 17、Maven                                          |
+| Web  | Spring Boot 3.2.5、Spring MVC、Jakarta Validation        |
+| 数据访问 | MyBatis-Plus 3.5.5、MySQL 8、Flyway 10.20.1              |
+| 安全   | Spring Security、JJWT 0.13.0、BCrypt                     |
+| 缓存   | Redis（`StringRedisTemplate` 手动缓存 + `setIfAbsent` 分布式锁） |
+| 测试   | JUnit 5、Mockito、MockMvc、真实 MySQL 集成测试                  |
+| 工程   | Docker、Docker Compose、Swagger / OpenAPI、Actuator、Git   |
 
 ## 项目结构
 
@@ -86,16 +97,16 @@ scripts                          集成测试运行脚本
 
 ## 环境变量
 
-| 变量 | 作用 | 默认值 |
-| --- | --- | --- |
-| `DB_PASSWORD` | MySQL 密码，必填 | 无 |
-| `JWT_SECRET` | Base64 JWT 密钥，解码后至少 32 字节，必填 | 无 |
-| `DB_URL` | JDBC 地址 | 本机 `localhost:3306/inventory` |
-| `DB_USERNAME` | MySQL 用户名 | `root` |
-| `REDIS_HOST` | Redis 主机 | `127.0.0.1` |
-| `REDIS_PORT` | Redis 端口 | `6379` |
-| `SERVER_PORT` | 应用端口 | `8080` |
-| `JWT_EXPIRATION_MS` | JWT 有效期（毫秒） | `86400000` |
+| 变量                  | 作用                           | 默认值                           |
+| ------------------- | ---------------------------- | ----------------------------- |
+| `DB_PASSWORD`       | MySQL 密码，必填                  | 无                             |
+| `JWT_SECRET`        | Base64 JWT 密钥，解码后至少 32 字节，必填 | 无                             |
+| `DB_URL`            | JDBC 地址                      | 本机 `localhost:3306/inventory` |
+| `DB_USERNAME`       | MySQL 用户名                    | `root`                        |
+| `REDIS_HOST`        | Redis 主机                     | `127.0.0.1`                   |
+| `REDIS_PORT`        | Redis 端口                     | `6379`                        |
+| `SERVER_PORT`       | 应用端口                         | `8080`                        |
+| `JWT_EXPIRATION_MS` | JWT 有效期（毫秒）                  | `86400000`                    |
 
 复制环境变量模板：
 
@@ -119,11 +130,11 @@ Flyway 会在应用启动时自动创建或迁移数据库，不需要手动执�
 
 默认端口映射：
 
-| 服务 | Windows 端口 | 容器端口 |
-| --- | ---: | ---: |
-| Spring Boot | 8080 | 8080 |
-| MySQL | 3307 | 3306 |
-| Redis | 6380 | 6379 |
+| 服务          | Windows 端口 | 容器端口 |
+| ----------- | ---------: | ---: |
+| Spring Boot |       8080 | 8080 |
+| MySQL       |       3307 | 3306 |
+| Redis       |       6380 | 6379 |
 
 查看应用日志：
 
@@ -156,6 +167,7 @@ mvn test
 集成测试脚本会读取 `.env` 中的 `DB_PASSWORD`，启动 Docker MySQL，然后执行：
 
 - `ProductConcurrencyIT`：库存为 1 时两个线程同时扣减，只有一个成功。
+
 - `OrderTransactionRollbackIT`：订单保存失败后，库存和库存流水一起回滚。
 
 ## 接口与健康检查
@@ -163,18 +175,27 @@ mvn test
 应用启动后访问：
 
 - Swagger UI：<http://localhost:8080/swagger-ui.html>
+
 - OpenAPI JSON：<http://localhost:8080/v3/api-docs>
+
 - 健康检查：<http://localhost:8080/actuator/health>
 
 主要接口前缀：
 
 - 认证：`/api/auth`
+
 - 商品与库存：`/api/products`
+
 - 订单：`/api/orders`
+
 - 管理员：`/api/admin`
 
 ## 当前边界
 
 - 当前是个人学习项目，不宣称生产级高可用或完整分布式架构。
+
 - JWT 中的角色在 Token 过期前不会自动感知数据库角色变化；Redis Token 版本属于后续扩展，尚未实现。
+
+- 商品缓存已实现手动读写、空标记防穿透和分布式锁防击穿；缓存雪崩（大批 key 同时过期）仍依赖各 key 自身 TTL，未做均匀过期时间。
+
 - 前端为简单联调页面，项目重点仍是 Java 后端、数据库一致性和工程验证。
