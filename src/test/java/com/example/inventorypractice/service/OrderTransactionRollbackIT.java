@@ -19,7 +19,7 @@ import java.time.LocalDateTime;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doAnswer;
 
 @SpringBootTest(properties = {
         "app.jwt.secret=MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=",
@@ -76,9 +76,27 @@ class OrderTransactionRollbackIT {
             request.setQuantity(2);
 
             // 故意让“保存订单”这一步抛出异常
-            doThrow(new RuntimeException("模拟订单保存失败"))
-                    .when(sysOrderMapper)
-                    .insert(any(SysOrder.class));
+            doAnswer(invocation -> {
+                Product productBeforeFailure =
+                        productMapper.selectById(productId);
+
+                Integer operationCountBeforeFailure =
+                        jdbcTemplate.queryForObject(
+                                """
+                                SELECT COUNT(*)
+                                FROM stock_operation
+                                WHERE product_id = ?
+                                """,
+                                Integer.class,
+                                productId
+                        );
+
+                // 保存订单失败前，确认库存已经扣减、出库流水已经写入
+                assertEquals(3, productBeforeFailure.getStock());
+                assertEquals(1, operationCountBeforeFailure);
+
+                throw new RuntimeException("模拟订单保存失败");
+            }).when(sysOrderMapper).insert(any(SysOrder.class));
 
             assertThrows(
                     RuntimeException.class,
