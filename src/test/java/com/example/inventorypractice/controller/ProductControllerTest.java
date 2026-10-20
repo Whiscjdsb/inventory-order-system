@@ -1,5 +1,6 @@
 package com.example.inventorypractice.controller;
 
+import com.example.inventorypractice.mapper.SysUserMapper;
 import com.example.inventorypractice.security.JwtTokenProvider;
 import com.example.inventorypractice.service.ProductService;
 import com.example.inventorypractice.vo.InventoryOverviewVO;
@@ -32,6 +33,10 @@ class ProductControllerTest {
 
     @MockBean
     private JwtTokenProvider jwtTokenProvider;
+
+    // 即使关闭过滤器执行，Spring 仍要先创建 JWT 过滤器对象，因此需要提供它依赖的假 Mapper。
+    @MockBean
+    private SysUserMapper sysUserMapper;
 
 
     @Test

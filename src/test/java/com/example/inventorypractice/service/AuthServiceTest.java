@@ -177,4 +177,40 @@ class AuthServiceTest {
         );
     }
 
+    @Test
+    void shouldDisableUserAndIncrementTokenVersion() {
+        SysUser user = new SysUser();
+        user.setId(7L);
+        user.setStatus(1);
+        user.setTokenVersion(3);
+
+        // 模拟根据 ID 查到了这个用户。
+        when(sysUserMapper.selectById(7L)).thenReturn(user);
+
+        authService.disableUser(7L);
+
+        // 禁用后：状态从 1 变成 0，Token 版本从 3 变成 4。
+        assertEquals(0, user.getStatus());
+        assertEquals(4, user.getTokenVersion());
+
+        // 确认修改后的用户交给 Mapper 保存了一次。
+        verify(sysUserMapper).updateById(user);
+    }
+
+    @Test
+    void shouldThrowWhenDisablingMissingUser() {
+        when(sysUserMapper.selectById(999L)).thenReturn(null);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> authService.disableUser(999L)
+        );
+
+        assertEquals(404, exception.getCode());
+        assertEquals("用户不存在", exception.getMessage());
+
+        // 用户都不存在，不能执行数据库更新。
+        verify(sysUserMapper, never()).updateById(any(SysUser.class));
+    }
+
 }

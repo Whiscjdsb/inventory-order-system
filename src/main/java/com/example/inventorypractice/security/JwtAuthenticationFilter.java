@@ -1,5 +1,8 @@
 package com.example.inventorypractice.security;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.example.inventorypractice.entity.SysUser;
+import com.example.inventorypractice.mapper.SysUserMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -14,15 +17,19 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
+    private final SysUserMapper sysUserMapper;
 
     public JwtAuthenticationFilter(
-            JwtTokenProvider jwtTokenProvider) {
+            JwtTokenProvider jwtTokenProvider,
+            SysUserMapper sysUserMapper) {
         this.jwtTokenProvider = jwtTokenProvider;
+        this.sysUserMapper = sysUserMapper;
     }
 
     @Override
@@ -46,25 +53,38 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 String role =
                         jwtTokenProvider.getRole(token);
 
-                List<SimpleGrantedAuthority> authorities =
-                        List.of(
-                                new SimpleGrantedAuthority("ROLE_" + role)
-                        );
-
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(
-                                username,
-                                null,
-                                authorities
-                        );
-
-                authentication.setDetails(
-                        new WebAuthenticationDetailsSource()
-                                .buildDetails(request)
+                SysUser user = sysUserMapper.selectOne(
+                        new LambdaQueryWrapper<SysUser>()
+                                .eq(SysUser::getUsername, username)
                 );
 
-                SecurityContextHolder.getContext()
-                        .setAuthentication(authentication);
+                boolean userCanAuthenticate = user != null
+                        && Objects.equals(
+                        user.getTokenVersion(),
+                        jwtTokenProvider.getTokenVersion(token))
+                        && Objects.equals(user.getStatus(), 1);
+
+                if (userCanAuthenticate) {
+                    List<SimpleGrantedAuthority> authorities =
+                            List.of(
+                                    new SimpleGrantedAuthority("ROLE_" + role)
+                            );
+
+                    UsernamePasswordAuthenticationToken authentication =
+                            new UsernamePasswordAuthenticationToken(
+                                    username,
+                                    null,
+                                    authorities
+                            );
+
+                    authentication.setDetails(
+                            new WebAuthenticationDetailsSource()
+                                    .buildDetails(request)
+                    );
+
+                    SecurityContextHolder.getContext()
+                            .setAuthentication(authentication);
+                }
             }
         }
 

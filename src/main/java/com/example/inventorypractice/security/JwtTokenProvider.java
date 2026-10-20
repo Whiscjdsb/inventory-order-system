@@ -42,6 +42,7 @@ public class JwtTokenProvider {
                 .subject(user.getUsername())
                 .claim("userId", user.getId())
                 .claim("role", user.getRole())
+                .claim("tokenVersion", user.getTokenVersion())
                 .issuedAt(now)
                 .expiration(expiration)
                 .signWith(key)
@@ -73,5 +74,8 @@ public class JwtTokenProvider {
     }
     public String getRole(String token) {
         return parseToken(token).get("role", String.class);
+    }
+    public Integer getTokenVersion(String token) {
+        return parseToken(token).get("tokenVersion", Integer.class);
     }
 }

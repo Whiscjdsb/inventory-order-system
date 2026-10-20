@@ -71,4 +71,13 @@ public class AuthService {
         loginVO.setExpiresInSeconds(jwtTokenProvider.getExpirationSeconds());
         return loginVO;
     }
+    public void disableUser(Long id) {
+        SysUser user = sysUserMapper.selectById(id);
+        if (user == null) {
+            throw new BusinessException(404, "用户不存在");
+        }
+        user.setStatus(0);
+        user.setTokenVersion(user.getTokenVersion() + 1);
+        sysUserMapper.updateById(user);
+    }
 }
