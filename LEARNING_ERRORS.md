@@ -187,6 +187,16 @@ when(productMapper.deductStock(...)).thenReturn(1);
 
 只证明“Mapper 返回 1 时 Service 如何处理”。真实 SQL 条件、MySQL 行锁、并发竞争和事务回滚必须使用集成测试验证。
 
+### `@WebMvcTest` 在新增构造依赖后启动失败
+
+Controller 或过滤器新增了 Service、Mapper 等构造方法依赖后，已有 `@WebMvcTest` 不会自动创建这些对象，可能出现：
+
+```text
+No qualifying bean of type '某个Service或Mapper'
+```
+
+这不是业务断言失败，而是测试用 Spring 容器没有启动成功。测试中应为新增依赖补充 `@MockBean`；如果过滤器开始查询用户，对应认证用例还要准备状态和 Token 版本自洽的模拟用户。
+
 ## MySQL、SQL 与 Flyway
 
 ### 本机与容器端口混淆
